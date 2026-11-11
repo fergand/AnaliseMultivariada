@@ -1,0 +1,33 @@
+---
+title: "Cronograma do trabalho"
+format: pdf
+editor: visual
+---
+
+Diante do exposto do que discutimos no dia 11/11/2026, decidimos trabalhar com os dados sobre a qualidade dos grãos de café, provenientes do artigo **Dados edafoclimáticos do DF e qualidade de café** de autoria da Profa. Dra. Sonia Maria Costa Celestino. Vale ressaltar que os dados são recentes, visto que o artigo foi publicado em 2026. [Para ver o artigo, clique aqui](https://doi.org/10.48432/T4KNVL).
+
+# Resumo do conjunto de dados
+
+Projeto financiado pela FAPDF sob liderança da Universidade de Brasília, com participação da Embrapa na obtenção dos dados registados nas planilhas anexadas, as quais reúnem o conjunto de informações ambientais que combinam as propriedades físicas e químicas do solo (edáficas) com as condições meteorológicas e atmosféricas de uma região (climáticas) e as características químicas e tamanho de grão de café. Essas variáveis são fundamentais para conhecer a aptidão de uma área para o desenvolvimento vegetal e também para o estabelecimento de um terroir para o café no Cerrado do Distrito Federal. (2025-08-25)
+
+
+# Estrutura do trabalho
+
+Como discutido rapidamente, optamos por seguir as seguinte análises, correspondentemente e respectivamente, aos módulos 1 e 2 do cronograma da disciplina:
+
+1. MANOVA ou $T^2$ de Hotelling: comparando cafés de Peneira Alta vs. Peneira Baixa quanto ao vetor químico (5 variáveis);
+2. Análise de Correlação Canônica (ACC).
+
+O objetivo da nossa análise, a princípio, é responder o seguinte questionamento: separar o café por tamanho de grão (peneiras) na pós-colheita garante também uma bebida quimicamente diferente (cafeína, teor de Brix, ác. clorogênico)? 
+
+# Divisão das tarefas
+
+- Fernando: responsável pelas análises do módulo 1 e resultados prévios;
+- Thiago: responsável pelas análises do módulo 2 e resultados prévios;
+- Adelino: responsável pela contextualização agronômica (importância das variáveis físico-químicas do café e por que elas são biologicamente relacionadas) a partir dos conhecimentos da agronomia e dos resultados das análises dos demais membros do grupo.
+
+# Como acessar os dados?
+
+Tanto os dados quanto o script inicial para visualização no R estarão disponibilizados no repositório online do Git e também na pasta no grupo do trabalho no WhatsApp. 
+
+Nota: para visualizar o script todo, veja as commits, pois, por praticidade, será disponiblizado somente o essencial do pré-processamento no arquivo.
