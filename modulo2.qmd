@@ -1,0 +1,409 @@
+---
+title: "modulo2"
+format: pdf
+editor: visual
+---
+
+```{r}
+pacman::p_load(tidyverse, readxl, janitor, corrplot, MVN, candisc, factoextra, MASS)
+
+# Dados Café: Profa. Dra Sonia Maria Costa Celestino ----------------------
+
+df_solo_bruto <- read_tsv("dados/Dados do solo.tsv",locale = locale(decimal_mark = ","))
+df_met_bruto <- read_csv("dados/Dados metereológicos.csv",locale = locale(decimal_mark = ","))
+df_cafe_bruto <- read_xlsx("dados/Dados qualidade café.xlsx")
+
+str(df_solo_bruto);str(df_met_bruto);str(df_cafe_bruto)
+summary(df_solo_bruto)
+summary(df_met_bruto)
+summary(df_cafe_bruto)
+```
+
+
+```{r}
+# Limpeza inicial dos dados -----------------------------------------------
+
+df_cafe <- df_cafe_bruto %>% 
+  clean_names() %>% 
+  rename(
+    amostra = codigo_da_amostra,
+    umidade = teor_de_agua_g_100g,
+    brix = solidos_soluveis_totais_graus_brix,
+    cloreto = cloreto_percent,
+    cafeina = cafeina_percent_b_s,
+    ac_clorogenico = ac_clorogenico_percent_b_s,
+    pen16 = peneira_16_percent,
+    pen17 = peneira_17_percent,
+    pen18 = peneira_18_percent,
+    pen19 = peneira_19_percent
+  ) %>% 
+  mutate(
+    amostra = as.factor(amostra),
+    pen18_19 = pen18+pen19,
+    class_grao = factor(ifelse(pen17 + pen18_19 >= median(pen17 + pen18_19), "Graudo", "Medio_Miudo"))
+  )
+
+
+summary(df_cafe)  
+
+boxplot(df_cafe)
+```
+
+
+```{r}
+library(car)
+df_cafe %>% 
+  dplyr::select(-amostra,-class_grao) %>% 
+  cor() %>% 
+  corrplot(method = "ellipse", type = "upper", 
+           addCoef.col = "black", tl.col = "black", number.cex = 0.8,
+           title = "Matriz de Correlação das Respostas", mar = c(0,0,2,0))
+```
+
+
+
+```{r}
+pacman::p_load(CCA)
+
+X_quimica <- df_cafe %>% 
+  dplyr::select(umidade:ac_clorogenico) %>% 
+  scale()
+
+X_fisica <- df_cafe %>% 
+  dplyr::select(pen16:pen19) %>% 
+  scale()
+
+acc_modelo <- cc(X_quimica, X_fisica)
+
+acc_modelo$cor
+```
+
+
+
+
+# EXEMPLO DA AULA
+
+
+
+```{r}
+#### Dividindo a matriz de dados em dois conjuntos/matrizes
+Y1 = X_quimica   # 1o conjunto de variáveis -> X(1)
+Y2 = X_fisica   # 2o conjunto de variáveis -> X(2)
+
+p = ncol(Y1)    # número de variáveis do 1o conjunto
+q = ncol(Y2)    # número de variáveis do 2o conjunto
+n = nrow(df_cafe) # número de unidades amostrais
+c(n = n, p = p, q = q)
+```
+
+```{r}
+#### BLOCO 3 - Análise exploratória: médias, covariâncias e correlações ########
+# Vetor de médias amostrais (excluindo a coluna 1, que identifica a amostra)
+yb = colMeans(df_cafe[ , -c(1,12)]);  round(yb, 3)
+```
+
+```{r}
+# Matriz de variâncias e covariâncias amostral
+S = cov(df_cafe[ , -c(1,12)]);  round(S, 3)
+```
+
+```{r}
+# Matriz de correlação amostral (Pearson)
+R = cor(df_cafe[ , -c(1,12)], method = "pearson");  round(R, 2)
+```
+
+```{r}
+# Partições da matriz de correlação: R11, R22 e R12
+R11 = R[1:p, 1:p];                  round(R11, 2)   # dentro do 1o conjunto
+R22 = R[(p+1):(p+q), (p+1):(p+q)];  round(R22, 2)   # dentro do 2o conjunto
+R12 = R[1:p, (p+1):(p+q)];          round(R12, 2)   # entre os conjuntos
+```
+
+```{r}
+### Visualização da matriz de correlação (correlograma)
+library(corrplot)
+Mcor = cor(df_cafe[ , -c(1,12)], method = "pearson")
+corrplot(Mcor, type = "upper", method = "color", tl.pos = "tl")
+corrplot(Mcor, add = TRUE, type = "lower", method = "number", tl.pos = "n",
+         number.cex = 0.9, col = "black", cl.pos = "n")
+```
+
+```{r}
+#| warning: false
+#| message: false
+
+### (Opcional) Gráficos de dispersão, histogramas e correlações
+library(GGally)
+ggpairs(df_cafe[ , -c(1,12)],
+        diag  = list(continuous = wrap("barDiag", bins = 5)),
+        lower = list(continuous = wrap("points", alpha = 0.6, size = 0.9)),
+        upper = list(continuous = wrap("cor", size = 4))) +
+  theme(axis.text.x = element_text(size = 3),   # tamanho dos números no eixo x
+        axis.text.y = element_text(size = 5))   # tamanho dos números no eixo y
+```
+
+```{r}
+#### BLOCO 4 - Análise de correlação canônica (pacote candisc) ###############
+# Padronizando os dados (unidades de medida diferentes -> usar a matriz R)
+Y1n = scale(Y1, center = TRUE, scale = TRUE)
+Y2n = scale(Y2, center = TRUE, scale = TRUE)
+
+library(candisc)
+cc = cancor(Y1n, Y2n)   # função cancor do pacote candisc
+
+## summary(cc) apresenta:
+##  CanR   -> coeficientes de correlação canônica
+##  CanRSQ -> correlações canônicas ao quadrado (autovalores lambda)
+##  LR test stat -> estatística lambda de Wilks (testes sequenciais)
+##  approx F / Pr(> F) -> aproximação F de Rao e valor p
+##  Raw canonical coefficients -> coeficientes das variáveis canônicas u (X) e v (Y)
+summary(cc)
+```
+
+A primeira correlação é sempre a maior: 0.58, representando uma correlação positiva substancial. Porém, nenhuma correlação é significativa!
+
+
+Mas o que fez dar essa correlação?
+
+Vemos embaixo como cada variável impactou para essa primeira autocorrelação
+
+$$u_1 = -1.18umidade+0.04brix-0.31cloreto-0.72cafeina+0.29acclorogenico$$
+
+$$v_1 = 1.41pen_{16}+0.47pen_{17}+0.13pen_{18}+0.78pen_{19}$$
+
+A segunda variável apresenta uma correlação positiva moderada de 0.40, que também não é significativa.
+
+(ver sobre o percentual do lado)
+
+$$u_2 = 0.21umidade-0.01brix-0.93cloreto+0.12cafeina-0.41acclorogenico$$
+
+$$v_2 = 0.51pen_{16}+1.30pen_{17}-0.09pen_{18}+0.27pen_{19}$$
+
+```{r}
+names(cc)            # todos os resultados disponíveis no objeto cc
+
+cc$cancor            # correlações canônicas  r = sqrt(lambda)
+lambda = cc$cancor^2 # autovalores  lambda
+lambda
+
+cc$coef              # coeficientes a (conjunto 1 -> u) e b (conjunto 2 -> v)
+```
+
+```{r}
+#### BLOCO 5 - Testes de significância (aproximação qui-quadrado de Bartlett) ##
+## H0 (linha k): a k-ésima correlação canônica e todas as seguintes são iguais a zero
+alfa = 0.05
+inicio = 1;  fim = min(p, q)
+sig = matrix(0, 1, fim);  estat = matrix(0, 1, fim);  gl = matrix(0, 1, fim)
+p_i = p;  q_i = q
+
+for (i in 1:fim) {
+  estat[i] = -(n - (p + q + 3)/2) * sum(log(1 - lambda[inicio:fim]))
+  df       = p_i * q_i
+  valorp   = 1 - pchisq(estat[i], df)
+  p_i = p_i - 1;  q_i = q_i - 1;  inicio = inicio + 1
+  sig[i] = valorp;  gl[i] = df
+}
+tab = cbind(t(estat), t(gl), t(sig))
+colnames(tab) = c("Estat.Teste", "gl", "p")
+round(tab, 4)
+```
+
+```{r}
+#### BLOCO 6 - Escores das variáveis canônicas ###############################
+## $X -> escores de u1, u2, ... (1o conjunto)
+## $Y -> escores de v1, v2, ... (2o conjunto)
+cc$scores
+```
+
+Vamos ver como cada variável possui associação com essas variáveis canônicas, assim como as cargas cruzadas:
+
+```{r}
+#### BLOCO 7 - Cargas canônicas (diretas e cruzadas) ##########################
+## $X.xscores -> cargas DIRETAS do 1o conjunto  (correlação X(1) com u)
+## $Y.yscores -> cargas DIRETAS do 2o conjunto  (correlação X(2) com v)
+## $X.yscores -> cargas CRUZADAS do 1o conjunto (correlação X(1) com v)
+## $Y.xscores -> cargas CRUZADAS do 2o conjunto (correlação X(2) com u)
+cc$structure
+```
+
+```{r}
+### Proporção da variância total de cada conjunto explicada por cada variável canônica
+var_u = colSums(cc$structure$X.xscores^2) / p   # 1o conjunto, por u1, u2, ...
+var_v = colSums(cc$structure$Y.yscores^2) / q   # 2o conjunto, por v1, v2, ...
+round(rbind(var_u, var_v), 4)
+```
+
+```{r}
+#### BLOCO 8 - Gráficos de barras das cargas canônicas ########################
+## vermelho = carga negativa;  azul = carga positiva
+par(mfrow = c(2, 2))
+cargac1 = cc$structure$X.xscores[ , 1]   # cargas canônicas de u1
+cargac2 = cc$structure$Y.yscores[ , 1]   # cargas canônicas de v1
+cargac3 = cc$structure$X.xscores[ , 2]   # cargas canônicas de u2
+cargac4 = cc$structure$Y.yscores[ , 2]   # cargas canônicas de v2
+barplot(cargac1, col = sign(cargac1) + 3, horiz = TRUE, las = 1, xlim = c(-1, 1), main = "u1")
+barplot(cargac2, col = sign(cargac2) + 3, horiz = TRUE, las = 1, xlim = c(-1, 1), main = "v1")
+barplot(cargac3, col = sign(cargac3) + 3, horiz = TRUE, las = 1, xlim = c(-1, 1), main = "u2")
+barplot(cargac4, col = sign(cargac4) + 3, horiz = TRUE, las = 1, xlim = c(-1, 1), main = "v2")
+```
+
+```{r}
+#### BLOCO 9 - Gráficos de dispersão dos pares de variáveis canônicas ##########
+par(mfrow = c(1, 2))   # dividindo a janela gráfica em 1 linha e 2 colunas
+
+## Escores do primeiro e do segundo par de variáveis canônicas
+u1 = cc$scores$X[ , 1];   v1 = cc$scores$Y[ , 1]
+u2 = cc$scores$X[ , 2];   v2 = cc$scores$Y[ , 2]
+
+## Gráfico de dispersão do primeiro par de variáveis canônicas
+plot(u1, v1, pch = 16, xlab = "u1", ylab = "v1")
+text(u1, v1, pos = 3, cex = 0.7)
+
+## Gráfico de dispersão do segundo par de variáveis canônicas
+plot(u2, v2, pch = 16, xlab = "u2", ylab = "v2")
+text(u2, v2, pos = 3, cex = 0.7)
+
+
+
+par(mfrow = c(1, 1))   # volta a janela gráfica ao padrão
+################################################################################
+
+```
+
+Algumas discussões e conclusões:
+
+A primeira correlação canônica encontrada é de $R_{c1} = 0.5823$, o que indica uma associação positiva, de moderada a forte, entre um perfil químico específico e um perfil físico específico.  
+O teste de significância de Bartlett retornou um valor-p de $0.0808$ (ou $0.0817$ no summary do pacote). Sob o rigor estatístico clássico ($\alpha = 0.05$), nenhuma das correlações apresentou significância estatística. Contudo, pelo valor-p ainda estar próximo a $0.05$ (p < $0.10$), esse resultado representa uma tendência estatística, mesmo que mais sutil. Em dados agronômicos relativamente pequenos ($n=51$), essa tendência já é um achado importante.
+
+Para entender o que torna um café quimicamente diferente do outro com base na peneira, deve-se olhar para as cargas canônicas diretas do primeiro par ($u_1$ para química e $v_1$ para física), que mostram quais variáveis originais mais pesam na formação dessa correlação de $0.58$.   
+
+O lado físico ($v_1$): A variável canônica física ($v_1$) é fortemente impulsionada de forma positiva pela Peneira 16 (carga de $+0.7177$). Em contrapartida, as Peneiras 17 e 18 puxam essa variável para o lado negativo (cargas de $-0.3624$ e $-0.3975$, respectivamente). Portanto, o eixo $v_1$ representa um contraste de tamanho: valores altos indicam predominância de grãos menores (Peneira 16), e valores baixos indicam grãos maiores.   
+
+O lado químico ($u_1$): A variável canônica química ($u_1$) é fortemente influenciada de maneira negativa pela umidade (carga de $-0.8009$). Por outro lado, os Sólidos Solúveis Totais (Brix) exercem uma forte influência positiva (carga de $+0.5092$). Logo, valores altos de $u_1$ representam um café com menor teor de água e maior concentração de açúcares/sólidos solúveis.
+
+Como $u_1$ e $v_1$ possuem uma correlação positiva ($0.5823$), as características que elevam o valor de um lado andam junto com as características que elevam o valor do outro lado.  
+
+Ou seja, há uma tendência de que separar o café por tamanho de grão reflita em diferenças na bebida. Os dados demonstram que lotes com maior retenção de grãos menores (Peneira 16) tendem a apresentar menor umidade e maior grau Brix. Inversamente, amostras com grãos mais graúdos (Peneiras 17 e 18) tendem a reter mais água e apresentar menor concentração de sólidos solúveis.
+
+O teor de Cafeína e o Ácido Clorogênico tiveram baixas cargas na formação desse primeiro eixo ($-0.1796$ e $-0.1880$), indicando que a separação por essas peneiras específicas não afetou drasticamente a extração desses dois componentes químicos. De forma bem sutil, amostras com grãos menores apresentam mais cafeína e ácido clorogênico.
+
+
+
+
+A segunda correlação canônica ($R_{c2}$) apresenta um valor de $0.4000$, indicando uma associação positiva moderada entre o segundo par de variáveis canônicas ($u_2$ e $v_2$). No entanto, há falta de significância estatística, pois o teste de hipótese para a segunda correlação canônica (e as subsequentes) retornou um valor-p de $0.5529$ pela aproximação F (e $0.5523$ pelo teste de Bartlett no Bloco 5). 
+
+Como esse valor é muito superior aos níveis de significância usuais ($\alpha = 0.05$ ou $\alpha = 0.10$), esta correlação não é estatisticamente significativa. Na prática, isso significa que a relação matemática encontrada neste segundo eixo pode ser apenas fruto de variação amostral (ruído) e não um padrão confiável da população de café. 
+
+Mesmo que esse segundo eixo contenha quase 25% da associação entre os blocos, o teste de significância indicou ($p = 0.5529$) que essa fatia de 25% não é forte o suficiente para se sobressair ao acaso (ruído amostral). É por isso que, podemos afirmar que a primeira dimensão canônica retém a maior parte da associação (66.75%) e é a única via de relação estatisticamente confiável entre as propriedades físicas e químicas do café nesse conjunto de dados. 
+
+Se fôssemos olhar apenas descritivamente (ignorando o valor-p), teríamos os seguintes resultados e interpretações:
+
+O Perfil Físico ($v_2$): Analisando as cargas canônicas diretas (Bloco 7), o eixo físico da segunda correlação é quase que inteiramente dominado de forma positiva pela Peneira 17 (carga de $+0.9261$).   
+
+O Perfil Químico ($u_2$): Do lado químico, a variável com maior peso positivo neste segundo eixo é o Cloreto (carga de $+0.9304$), contrastando negativamente com o Ácido Clorogênico ($-0.5095$) e a Cafeína ($-0.4042$).   
+
+Esse eixo sugeriria que amostras com maior retenção na Peneira 17 estariam levemente associadas a níveis mais altos de cloreto e mais baixos de ácido clorogênico e cafeína. Ressaltando novamente a influência negativa dos grãos maiores para o teor de cafeína e ácido clorogênico, visto de forma sutil na primeira correlação canônica.
+
+Embora o segundo par canônico tenha apresentado uma correlação de 0.40, o teste de significância indicou que este eixo não é estatisticamente diferente de zero ($p = 0.552$), sugerindo que apenas a primeira dimensão canônica ($u_1, v_1$) é suficiente para explicar a associação entre as características físicas e químicas dos grãos neste experimento." 
+
+
+
+
+## Discriminante Linear
+
+Obs: não faz sentido utilizar as variáveis relacionadas à peneira aqui.
+
+```{r}
+pacman::p_load(caret)
+
+modelo_lda <- lda(class_grao ~ umidade + brix + cloreto + cafeina + ac_clorogenico , 
+                  data = df_cafe)
+
+modelo_lda
+```
+
+
+
+
+```{r}
+predicoes_lda <- predict(modelo_lda, df_cafe)
+confusionMatrix(predicoes_lda$class, df_cafe$class_grao)
+```
+
+
+```{r}
+plot(modelo_lda, col = as.numeric(df_cafe$class_grao), 
+     main = "Separação dos Tamanhos de Grão pelo Perfil Químico")
+```
+
+# ACP
+
+```{r}
+pca_quimica <- prcomp(df_cafe %>% dplyr::select(umidade:ac_clorogenico), scale = TRUE)
+
+summary(pca_quimica)
+fviz_eig(pca_quimica, addlabels = TRUE, ylim = c(0, 100),
+         main = "Variância Explicada pelas Componentes Principais")
+
+fviz_pca_biplot(pca_quimica, 
+                repel = TRUE, # Evita sobreposição de texto
+                col.var = "black", # Cor das setas (variáveis)
+                col.ind = df_cafe$class_grao, # Colore os pontos pelo tamanho do grão
+                palette = c("#FC4E07", "#00AFBB"),
+                legend.title = "Tamanho do Grão",
+                title = "Biplot ACP: Perfil Químico e Tamanho Físico")
+```
+
+
+Utilizando todas as variáveis:
+
+```{r}
+pca_full <- prcomp(df_cafe %>% dplyr::select(umidade:pen19), scale = TRUE)
+
+summary(pca_full)
+fviz_eig(pca_full, addlabels = TRUE, ylim = c(0, 100),
+         main = "Variância Explicada pelas Componentes Principais")
+
+fviz_pca_biplot(pca_full, 
+                repel = TRUE, # Evita sobreposição de texto
+                col.var = "black", # Cor das setas (variáveis)
+                col.ind = df_cafe$class_grao, # Colore os pontos pelo tamanho do grão
+                palette = c("#FC4E07", "#00AFBB"),
+                legend.title = "Tamanho do Grão",
+                title = "Biplot ACP: Perfil Químico e Tamanho Físico")
+```
+
+# Agrupamento
+
+
+```{r}
+# 1. Padronizando a matriz química (Z-score)
+matriz_quimica_padrao <- df_cafe %>% 
+  dplyr::select(umidade:ac_clorogenico) %>% 
+  scale()
+
+# 2. Descobrindo o número ótimo de clusters (Método do Cotovelo/Elbow ou Silhouette)
+fviz_nbclust(matriz_quimica_padrao, kmeans, method = "silhouette")
+
+# 3. Rodando o K-Means (assumindo que o gráfico anterior sugeriu k = 2 ou 3)
+set.seed(123) # Para reprodutibilidade
+modelo_kmeans <- kmeans(matriz_quimica_padrao, centers = 2, nstart = 25)
+
+# Adicionando o cluster gerado ao dataframe original
+df_cafe <- df_cafe %>%
+  mutate(cluster_quimico = as.factor(modelo_kmeans$cluster))
+
+# 4. Visualizando os Clusters
+fviz_cluster(modelo_kmeans, data = matriz_quimica_padrao,
+             palette = "jco",
+             ggtheme = theme_minimal(),
+             main = "Agrupamento K-Means do Perfil Químico")
+
+# 5. Tabela de contingência: O agrupamento químico refletiu a peneira física?
+table(Agrupamento_Quimico = df_cafe$cluster_quimico, 
+      Tamanho_Real = df_cafe$class_grao)
+```
+
+
+
