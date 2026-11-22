@@ -38,6 +38,7 @@ df_cafe <- df_cafe_bruto %>%
     class_grao = factor(ifelse(pen17 + pen18_19 >= median(pen17 + pen18_19), "Graudo", "Medio_Miudo"))
   )
 
+save(df_cafe, file = "dados/cafe.RData")
 
 summary(df_cafe)  
 
