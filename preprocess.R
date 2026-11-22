@@ -33,9 +33,7 @@ df_cafe <- df_cafe_bruto %>%
     pen19 = peneira_19_percent
   ) %>% 
   mutate(
-    amostra = as.factor(amostra),
-    pen18_19 = pen18+pen19,
-    class_grao = factor(ifelse(pen17 + pen18_19 >= median(pen17 + pen18_19), "Graudo", "Medio_Miudo"))
+    amostra = as.factor(amostra)
   )
 
 save(df_cafe, file = "dados/cafe.RData")
