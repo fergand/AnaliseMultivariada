@@ -19,7 +19,6 @@ summary(df_met_bruto)
 summary(df_cafe_bruto)
 ```
 
-
 ```{r}
 # Limpeza inicial dos dados -----------------------------------------------
 
@@ -49,7 +48,6 @@ summary(df_cafe)
 boxplot(df_cafe)
 ```
 
-
 ```{r}
 library(car)
 df_cafe %>% 
@@ -59,8 +57,6 @@ df_cafe %>%
            addCoef.col = "black", tl.col = "black", number.cex = 0.8,
            title = "Matriz de Correlação das Respostas", mar = c(0,0,2,0))
 ```
-
-
 
 ```{r}
 pacman::p_load(CCA)
@@ -78,12 +74,7 @@ acc_modelo <- cc(X_quimica, X_fisica)
 acc_modelo$cor
 ```
 
-
-
-
 # EXEMPLO DA AULA
-
-
 
 ```{r}
 #### Dividindo a matriz de dados em dois conjuntos/matrizes
@@ -161,7 +152,6 @@ summary(cc)
 ```
 
 A primeira correlação é sempre a maior: 0.58, representando uma correlação positiva substancial. Porém, nenhuma correlação é significativa!
-
 
 Mas o que fez dar essa correlação?
 
@@ -273,42 +263,36 @@ par(mfrow = c(1, 1))   # volta a janela gráfica ao padrão
 
 Algumas discussões e conclusões:
 
-A primeira correlação canônica encontrada é de $R_{c1} = 0.5823$, o que indica uma associação positiva, de moderada a forte, entre um perfil químico específico e um perfil físico específico.  
-O teste de significância de Bartlett retornou um valor-p de $0.0808$ (ou $0.0817$ no summary do pacote). Sob o rigor estatístico clássico ($\alpha = 0.05$), nenhuma das correlações apresentou significância estatística. Contudo, pelo valor-p ainda estar próximo a $0.05$ (p < $0.10$), esse resultado representa uma tendência estatística, mesmo que mais sutil. Em dados agronômicos relativamente pequenos ($n=51$), essa tendência já é um achado importante.
+A primeira correlação canônica encontrada é de $R_{c1} = 0.5823$, o que indica uma associação positiva, de moderada a forte, entre um perfil químico específico e um perfil físico específico.\
+O teste de significância de Bartlett retornou um valor-p de $0.0808$ (ou $0.0817$ no summary do pacote). Sob o rigor estatístico clássico ($\alpha = 0.05$), nenhuma das correlações apresentou significância estatística. Contudo, pelo valor-p ainda estar próximo a $0.05$ (p \< $0.10$), esse resultado representa uma tendência estatística, mesmo que mais sutil. Em dados agronômicos relativamente pequenos ($n=51$), essa tendência já é um achado importante.
 
-Para entender o que torna um café quimicamente diferente do outro com base na peneira, deve-se olhar para as cargas canônicas diretas do primeiro par ($u_1$ para química e $v_1$ para física), que mostram quais variáveis originais mais pesam na formação dessa correlação de $0.58$.   
+Para entender o que torna um café quimicamente diferente do outro com base na peneira, deve-se olhar para as cargas canônicas diretas do primeiro par ($u_1$ para química e $v_1$ para física), que mostram quais variáveis originais mais pesam na formação dessa correlação de $0.58$.
 
-O lado físico ($v_1$): A variável canônica física ($v_1$) é fortemente impulsionada de forma positiva pela Peneira 16 (carga de $+0.7177$). Em contrapartida, as Peneiras 17 e 18 puxam essa variável para o lado negativo (cargas de $-0.3624$ e $-0.3975$, respectivamente). Portanto, o eixo $v_1$ representa um contraste de tamanho: valores altos indicam predominância de grãos menores (Peneira 16), e valores baixos indicam grãos maiores.   
+O lado físico ($v_1$): A variável canônica física ($v_1$) é fortemente impulsionada de forma positiva pela Peneira 16 (carga de $+0.7177$). Em contrapartida, as Peneiras 17 e 18 puxam essa variável para o lado negativo (cargas de $-0.3624$ e $-0.3975$, respectivamente). Portanto, o eixo $v_1$ representa um contraste de tamanho: valores altos indicam predominância de grãos menores (Peneira 16), e valores baixos indicam grãos maiores.
 
 O lado químico ($u_1$): A variável canônica química ($u_1$) é fortemente influenciada de maneira negativa pela umidade (carga de $-0.8009$). Por outro lado, os Sólidos Solúveis Totais (Brix) exercem uma forte influência positiva (carga de $+0.5092$). Logo, valores altos de $u_1$ representam um café com menor teor de água e maior concentração de açúcares/sólidos solúveis.
 
-Como $u_1$ e $v_1$ possuem uma correlação positiva ($0.5823$), as características que elevam o valor de um lado andam junto com as características que elevam o valor do outro lado.  
+Como $u_1$ e $v_1$ possuem uma correlação positiva ($0.5823$), as características que elevam o valor de um lado andam junto com as características que elevam o valor do outro lado.
 
 Ou seja, há uma tendência de que separar o café por tamanho de grão reflita em diferenças na bebida. Os dados demonstram que lotes com maior retenção de grãos menores (Peneira 16) tendem a apresentar menor umidade e maior grau Brix. Inversamente, amostras com grãos mais graúdos (Peneiras 17 e 18) tendem a reter mais água e apresentar menor concentração de sólidos solúveis.
 
 O teor de Cafeína e o Ácido Clorogênico tiveram baixas cargas na formação desse primeiro eixo ($-0.1796$ e $-0.1880$), indicando que a separação por essas peneiras específicas não afetou drasticamente a extração desses dois componentes químicos. De forma bem sutil, amostras com grãos menores apresentam mais cafeína e ácido clorogênico.
 
+A segunda correlação canônica ($R_{c2}$) apresenta um valor de $0.4000$, indicando uma associação positiva moderada entre o segundo par de variáveis canônicas ($u_2$ e $v_2$). No entanto, há falta de significância estatística, pois o teste de hipótese para a segunda correlação canônica (e as subsequentes) retornou um valor-p de $0.5529$ pela aproximação F (e $0.5523$ pelo teste de Bartlett no Bloco 5).
 
+Como esse valor é muito superior aos níveis de significância usuais ($\alpha = 0.05$ ou $\alpha = 0.10$), esta correlação não é estatisticamente significativa. Na prática, isso significa que a relação matemática encontrada neste segundo eixo pode ser apenas fruto de variação amostral (ruído) e não um padrão confiável da população de café.
 
-
-A segunda correlação canônica ($R_{c2}$) apresenta um valor de $0.4000$, indicando uma associação positiva moderada entre o segundo par de variáveis canônicas ($u_2$ e $v_2$). No entanto, há falta de significância estatística, pois o teste de hipótese para a segunda correlação canônica (e as subsequentes) retornou um valor-p de $0.5529$ pela aproximação F (e $0.5523$ pelo teste de Bartlett no Bloco 5). 
-
-Como esse valor é muito superior aos níveis de significância usuais ($\alpha = 0.05$ ou $\alpha = 0.10$), esta correlação não é estatisticamente significativa. Na prática, isso significa que a relação matemática encontrada neste segundo eixo pode ser apenas fruto de variação amostral (ruído) e não um padrão confiável da população de café. 
-
-Mesmo que esse segundo eixo contenha quase 25% da associação entre os blocos, o teste de significância indicou ($p = 0.5529$) que essa fatia de 25% não é forte o suficiente para se sobressair ao acaso (ruído amostral). É por isso que, podemos afirmar que a primeira dimensão canônica retém a maior parte da associação (66.75%) e é a única via de relação estatisticamente confiável entre as propriedades físicas e químicas do café nesse conjunto de dados. 
+Mesmo que esse segundo eixo contenha quase 25% da associação entre os blocos, o teste de significância indicou ($p = 0.5529$) que essa fatia de 25% não é forte o suficiente para se sobressair ao acaso (ruído amostral). É por isso que, podemos afirmar que a primeira dimensão canônica retém a maior parte da associação (66.75%) e é a única via de relação estatisticamente confiável entre as propriedades físicas e químicas do café nesse conjunto de dados.
 
 Se fôssemos olhar apenas descritivamente (ignorando o valor-p), teríamos os seguintes resultados e interpretações:
 
-O Perfil Físico ($v_2$): Analisando as cargas canônicas diretas (Bloco 7), o eixo físico da segunda correlação é quase que inteiramente dominado de forma positiva pela Peneira 17 (carga de $+0.9261$).   
+O Perfil Físico ($v_2$): Analisando as cargas canônicas diretas (Bloco 7), o eixo físico da segunda correlação é quase que inteiramente dominado de forma positiva pela Peneira 17 (carga de $+0.9261$).
 
-O Perfil Químico ($u_2$): Do lado químico, a variável com maior peso positivo neste segundo eixo é o Cloreto (carga de $+0.9304$), contrastando negativamente com o Ácido Clorogênico ($-0.5095$) e a Cafeína ($-0.4042$).   
+O Perfil Químico ($u_2$): Do lado químico, a variável com maior peso positivo neste segundo eixo é o Cloreto (carga de $+0.9304$), contrastando negativamente com o Ácido Clorogênico ($-0.5095$) e a Cafeína ($-0.4042$).
 
 Esse eixo sugeriria que amostras com maior retenção na Peneira 17 estariam levemente associadas a níveis mais altos de cloreto e mais baixos de ácido clorogênico e cafeína. Ressaltando novamente a influência negativa dos grãos maiores para o teor de cafeína e ácido clorogênico, visto de forma sutil na primeira correlação canônica.
 
-Embora o segundo par canônico tenha apresentado uma correlação de 0.40, o teste de significância indicou que este eixo não é estatisticamente diferente de zero ($p = 0.552$), sugerindo que apenas a primeira dimensão canônica ($u_1, v_1$) é suficiente para explicar a associação entre as características físicas e químicas dos grãos neste experimento." 
-
-
-
+Embora o segundo par canônico tenha apresentado uma correlação de 0.40, o teste de significância indicou que este eixo não é estatisticamente diferente de zero ($p = 0.552$), sugerindo que apenas a primeira dimensão canônica ($u_1, v_1$) é suficiente para explicar a associação entre as características físicas e químicas dos grãos neste experimento."
 
 ## Discriminante Linear
 
@@ -323,18 +307,15 @@ modelo_lda <- lda(class_grao ~ umidade + brix + cloreto + cafeina + ac_clorogeni
 modelo_lda
 ```
 
-
-
-
 ```{r}
 predicoes_lda <- predict(modelo_lda, df_cafe)
 confusionMatrix(predicoes_lda$class, df_cafe$class_grao)
 ```
 
-
 ```{r}
-plot(modelo_lda, col = as.numeric(df_cafe$class_grao), 
-     main = "Separação dos Tamanhos de Grão pelo Perfil Químico")
+# 
+# plot(modelo_lda, col = as.numeric(df_cafe$class_grao), 
+#      main = "Separação dos Tamanhos de Grão pelo Perfil Químico")
 ```
 
 # ACP
@@ -355,7 +336,6 @@ fviz_pca_biplot(pca_quimica,
                 title = "Biplot ACP: Perfil Químico e Tamanho Físico")
 ```
 
-
 Utilizando todas as variáveis:
 
 ```{r}
@@ -375,7 +355,6 @@ fviz_pca_biplot(pca_full,
 ```
 
 # Agrupamento
-
 
 ```{r}
 # 1. Padronizando a matriz química (Z-score)
@@ -404,6 +383,3 @@ fviz_cluster(modelo_kmeans, data = matriz_quimica_padrao,
 table(Agrupamento_Quimico = df_cafe$cluster_quimico, 
       Tamanho_Real = df_cafe$class_grao)
 ```
-
-
-
