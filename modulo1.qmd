@@ -1,0 +1,174 @@
+---
+title: "Módulo 1: Comparação entre médias com relação ao tipo de grão"
+format: pdf
+editor: visual
+
+bibliography: bib.bib
+csl: abnt.csl
+link-citations: true
+
+indent: true
+
+lang: pt-br
+---
+
+
+```{r pkgs}
+#| include: false
+
+load("dados/cafe.RData")
+
+pacman::p_load(tidyverse, janitor, MVN, heplots, Hotelling, magrittr, kableExtra)
+```
+
+Diante do nosso cronograma, para contemplar o módulo 1 presente na ementa da disciplina, decidimos por efetuar o teste $T^2$ de Hotelling, que para dois grupos independentes, equivale a um caso particular da MANOVA. O objetivo central é comparar o vetor médio das 5 variáveis químicas $\mathbf{Y} = (\text{Umidade}, \text{Brix}, \text{Cloreto}, \text{Cafeína}, \text{Ac. Clorídrico})'$ em relação ao tipo de peneira (Baixa **vs.** Alta). 
+
+Na classificação oficial brasileira do café beneficiado, grãos retidos a partir da peneira 17 definem o padrão chato graúdo [@brasil2003]. Sendo assim, efetuar essa classificação no conjunto de dados é uma etapa fundamental antes de quaisquer análise. Deste modo, para que a classificação respeite a física do processo de pós-colheita, isto é, classifique adequadamente cada lote (`amostra`), a categorização é realizada por meio da média das suas três repetições, evitando de jogar duas repetições do mesmo lote dentro de `Peneira Alta` e uma em `Peneira Baixa`. 
+
+```{r}
+df_cafe %<>%
+  mutate(media_pen_alta = mean(pen17 + pen18 + pen19), .by = amostra) %>%
+  mutate(
+    grupo_peneira = factor(
+      if_else(
+        media_pen_alta >= median(media_pen_alta), 
+        "Peneira Alta", "Peneira Baixa"),
+      levels = c("Peneira Alta", "Peneira Baixa")
+    )
+  ) %>% 
+  dplyr::select(-media_pen_alta)
+```
+
+Considerando $\mathbf{Y}_1$ e $\mathbf{Y}_2$, respectivamente, os vetores dos componentes químicos de `Peneira Alta` e `Peneira Baixa`, o teste $T^2$ de Hotelling por objetivo testar as hipóteses
+  $$H_0\colon \symbf{\mu}_1 - \symbf{\mu}_2 = \mathbf{0} \quad \text{vs.} \quad H_1\colon \symbf{\mu}_1 - \symbf{\mu}_2 \ne \mathbf{0},$$
+em que $\symbf{\mu}_1$ e $\symbf{\mu}_2$ são, respectivamente, os vetores de médias de $\mathbf{Y}_1$ e $\mathbf{Y}_2$. 
+
+Antes de prosseguir com o teste $T^2$ de Hotelling, é importante avaliar as suas premissas, sendo elas: 
+
+1. Normalidade multivariada: o teste de Henze-Zirkler (HZ) avalia a distribuição considerando a distância quadrática ponderada ($L^2$) entre a função entre a função característica empírica das observações padronizadas e a função característica teórica da distribuição normal multivariada padrão; o teste de Mardia generaliza os coeficientes univariados de assimetria e curtose por meio das distâncias de Mahalanobis, sendo sua grande vantagem é separar desvios de simetria de desvios de peso das caudas, visto que o teste $T^2$ de Hotelling é consideravelmente mais robusto a desvios moderados de curtose do que à assimetria severa; já o QQ-Plot utiliza a distância de Mahalanobis $D_i^2 = (\mathbf{y}_i - \bar{\mathbf{y}})'\mathbf{S}^{-1}(\mathbf{y}_i - \bar{\mathbf{y}})$.
+2. Homogeneidade das matrizes de variância-covariância: o teste M de Box avalia as hipóteses 
+  $$H_0\colon \symbf{\Sigma}_1 - \symbf{\Sigma}_2 = \mathbf{0}\quad \text{vs.} \quad H_0\colon \symbf{\Sigma}_1 - \symbf{\Sigma}_2 \ne \mathbf{0}$$
+comparando o determinante da matriz combinada $\mathbf{S}_p$ com os determinantes das matrizes individuais $\mathbf{S}_1$ e $\mathbf{S}_2$ por meio da estatística 
+  $$M = (n_1 + n_2 -2) \ln{|\mathbf{S}_p|} - ((n_1 - 1)\ln{|\mathbf{S}_1|} + (n_2 - 1)\ln{|\mathbf{S}_2|}.$$
+Em casos onde a $H_0$ é rejeitada, é comum recorrer a opções mais robustas, tais como o teste de Nel e van der Merwe.
+
+```{r}
+# Definindo o objeto com as variáveis de características químicas do café
+vars_quim <- c("umidade", "brix", "cloreto", "cafeina", "ac_clorogenico")
+# Definindo o vetor de observações quanto ao tipo de peneira
+Y_alta <- as.matrix(
+  df_cafe %>% 
+    filter(grupo_peneira == "Peneira Alta") %>% 
+    dplyr::select(all_of(vars_quim))
+  )
+Y_baixa <- as.matrix(
+  df_cafe %>% 
+    filter(grupo_peneira == "Peneira Baixa") %>%
+    dplyr::select(all_of(vars_quim))
+  )
+  
+# Verificando a Normalidade dos vetores
+mvnTest::HZ.test(Y_alta, qqplot = T)
+MVN::mvn(Y_alta, mvn_test = "mardia")$multivariate_normality
+mvnTest::HZ.test(Y_baixa, qqplot = T)
+MVN::mvn(Y_baixa, mvn_test = "mardia")$multivariate_normality
+```
+
+Quanto a normalidade, nota-se que o teste HZ rejeita-se a hipótese de normalidade para ambos os vetores de média. No entanto, o teste de Mardia indica normalidade para curtose e assimetria em alguns casos.
+
+```{r}
+# Testando a homogeneidade das matriz de variância-covariância
+heplots::boxM(df_cafe[, vars_quim], df_cafe$grupo_peneira)
+```
+Com relação ao teste M de Box, uma vez que o valor-$p = 0.27$, então, ao nível de 5\% de significância, não rejeita-se $H_0$, logo as matrizes são homogêneas.
+
+```{r}
+# T2 de Hotelling
+n1 <- nrow(Y_alta); n2 <- nrow(Y_baixa); p <- ncol(Y_alta)
+m1 <- colMeans(Y_alta); m2 <- colMeans(Y_baixa)
+S1 <- cov(Y_alta); S2 <- cov(Y_baixa)
+
+Sp <- ((n1 - 1) * S1 + (n2 - 1) * S2) / (n1 + n2 - 2)
+
+diff_medias <- m1 - m2
+T2_stat <- as.numeric(
+  (n1 * n2 / (n1 + n2)) * t(diff_medias) 
+  %*% solve(Sp) %*% diff_medias
+  )
+F_stat <- ((n1 + n2 - p - 1) / (p * (n1 + n2 - 2))) * T2_stat
+p_valor_T2 <- pf(F_stat, df1 = p, df2 = n1 + n2 - p - 1, lower.tail = FALSE)
+wilks <- 1 / (1 + T2_stat / (n1 + n2 - 2))
+
+cat(sprintf("T2 = %.4f | F(%d, %d) = %.4f | p-valor = %.5f | Wilks eq. = %.5f\n",
+            T2_stat, p, n1 + n2 - p - 1, F_stat, p_valor_T2, wilks))
+```
+Uma vez que o valor-$p = 0.07$, ao nível de 5\% de significância, então rejeita-se $H_0$, indicando que não há diferenças entre as características químicas separadas por peneiras. OS ICSs para os vetores podem ser verificados na @tbl-ics e visualizados graficamente na @fig-ics.
+
+```{r}
+#| echo: false
+#| tbl-cap: "ICSs simultâneos de 95\\% (Bonferroni e T2 de Hotelling)."
+#| label: tbl-ics
+
+alpha <- 0.05
+se_diff <- sqrt(diag(Sp) * (1/n1 + 1/n2))
+
+# Constante crítica de Hotelling (Roy-Bose) e de Bonferroni (m = 5 comparações)
+c_hotelling  <- sqrt((p * (n1 + n2 - 2) / (n1 + n2 - p - 1)) * qf(1 - alpha, p, n1 + n2 - p - 1))
+c_bonferroni <- qt(1 - alpha / (2 * p), df = n1 + n2 - 2)
+
+# Vetor discriminante padronizado (mostra qual variável mais separa os grupos)
+a_bruto <- as.numeric(solve(Sp) %*% diff_medias)
+a_padronizado <- a_bruto * sqrt(diag(Sp))
+
+df_posthoc <- tibble(
+  Variavel     = vars_quim,
+  Media_Alta   = m1,
+  Media_Baixa  = m2,
+  Diferenca    = diff_medias,
+  EP           = se_diff,
+  IC_Bonf_Inf  = diff_medias - c_bonferroni * se_diff,
+  IC_Bonf_Sup  = diff_medias + c_bonferroni * se_diff,
+  IC_T2_Inf    = diff_medias - c_hotelling * se_diff,
+  IC_T2_Sup    = diff_medias + c_hotelling * se_diff
+)
+
+df_posthoc %>% 
+  kable(
+    col.names = c("Variável", "Média Alta", "Média Baixa", "Diff", "EP", "IC Inf", "IC Sup", "IC Inf", "IC Sup"), 
+    format = "latex",
+    booktabs = T,
+    digits = 3
+  ) %>% 
+  add_header_above(c(" ", " " = 4, "Bonferroni" = 2, "Hotelling" = 2))
+```
+
+```{r}
+#| echo: false
+#| fig-cap: "ICSs simultâneos de 95\\% (Bonferroni e T2 de Hotelling)."
+#| label: fig-ics
+
+df_posthoc %>% 
+  mutate(
+    Variavel = factor(Variavel, levels = rev(vars_quim),
+                      labels = rev(c("Umidade", "°Brix", "Cloreto", "Cafeína", "Ác. Clorogênico"))),
+    Diff_d     = Diferenca /sqrt(diag(Sp)),
+    Bonf_Inf_d = IC_Bonf_Inf /sqrt(diag(Sp)),
+    Bonf_Sup_d = IC_Bonf_Sup /sqrt(diag(Sp)),
+    T2_Inf_d   = IC_T2_Inf / sqrt(diag(Sp)),
+    T2_Sup_d   = IC_T2_Sup / sqrt(diag(Sp))
+  ) %>% 
+  ggplot(aes(y = Variavel, x = Diff_d)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "firebrick") +
+  geom_errorbar(aes(xmin = T2_Inf_d, xmax = T2_Sup_d), width = 0.25, color = "gray65", linewidth = 1) +
+  geom_errorbar(aes(xmin = Bonf_Inf_d, xmax = Bonf_Sup_d), width = 0.12, color = "#1b9e77", linewidth = 1.5) +
+  geom_point(size = 3, color = "black") +
+  labs(
+    x = "Tamanho de Efeito Padronizado (d de Cohen)", y = NULL
+  )
+```
+
+
+# Referências {.unnumbered}
+
+::: {#refs}
+:::
