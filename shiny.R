@@ -7,6 +7,16 @@ library(ggthemes); set_theme(theme_clean())
 library(rgl)
 library(MVA)
 
+# pacotes adicionais para o modulo 2
+
+library(candisc)
+library(FactoMineR)
+library(factoextra)
+library(MASS)
+library(caret)
+library(pROC)
+library(cluster)
+
 ## para uma primeira versão, vamos começar com o df do exercício, para depois 
 ## generalizar
 
@@ -20,6 +30,7 @@ dados <- df_cafe %<>%
     )
   )
 vars_quim <- c("umidade", "brix", "cloreto", "cafeina", "ac_clorogenico")
+vars_fis <- c("pen16", "pen17", "pen18", "pen19")
 
 rotulos_quim <- c(
   "Umidade" = "umidade",
@@ -33,43 +44,149 @@ rotulos_quim <- c(
 ui <- page_fluid(
   withMathJax(),
   layout_columns(
+    col_widths = c(3, 9),
+    
+    # ==========================================================================
+    # CARD DA ESQUERDA (muda sozinho conforme a aba escolhida)
+    # ==========================================================================
     card(
-      card(
-        helpText("VETOR DE DIFERENÇA NULO (\\(\\boldsymbol{\\delta}_0 = \\boldsymbol{\\mu}_1 - \\boldsymbol{\\mu}_2\\))"),
-        numericInput("mu01", "Δ Umidade",         value = 0, step = 0.1),
-        numericInput("mu02", "Δ °Brix",           value = 0, step = 0.5),
-        numericInput("mu03", "Δ Cloreto",         value = 0, step = 0.005),
-        numericInput("mu04", "Δ Cafeína",         value = 0, step = 0.05),
-        numericInput("mu05", "Δ Ác. Clorogênico", value = 0, step = 0.1)
-      ),
-      br(),
-      card(
-        "PARÂMETROS",
-        sliderInput(
-          "alpha",
-          "Nível de significância \\(\\alpha\\):",
-          value = 0.05,
-          min = 0.01,
-          max = 0.10,
-          step = 0.01
+      # Controles do Módulo 1 (Fernando intacto — aparece em qualquer aba dele)
+      conditionalPanel(
+        condition = "input.tabset != 'acc' && input.tabset != 'acp' && input.tabset != 'disc' && input.tabset != 'cluster'",
+        card(
+          helpText("VETOR DE DIFERENÇA NULO (\\(\\boldsymbol{\\delta}_0 = \\boldsymbol{\\mu}_1 - \\boldsymbol{\\mu}_2\\))"),
+          numericInput("mu01", "Δ Umidade",         value = 0, step = 0.1),
+          numericInput("mu02", "Δ °Brix",           value = 0, step = 0.5),
+          numericInput("mu03", "Δ Cloreto",         value = 0, step = 0.005),
+          numericInput("mu04", "Δ Cafeína",         value = 0, step = 0.05),
+          numericInput("mu05", "Δ Ác. Clorogênico", value = 0, step = 0.1)
         ),
-        fluidRow(
-          column(6, actionButton("b", "Bonferroni", width = "100%")),
-          column(6, actionButton("h", "Hotelling",  width = "100%"))
+        br(),
+        card(
+          "PARÂMETROS",
+          sliderInput(
+            "alpha",
+            "Nível de significância \\(\\alpha\\):",
+            value = 0.05, min = 0.01, max = 0.10, step = 0.01
+          ),
+          fluidRow(
+            column(6, actionButton("b", "Bonferroni", width = "100%")),
+            column(6, actionButton("h", "Hotelling",  width = "100%"))
+          )
         )
+      ),
+      
+      # Controles da ACC
+      conditionalPanel(
+        condition = "input.tabset == 'acc'",
+        strong("PARÂMETROS DA ACC"),
+        hr(),
+        selectInput(
+          "acc_par", "Par canônico para visualização:",
+          choices = c("1º Par (u1, v1)" = 1, "2º Par (u2, v2)" = 2),
+          selected = 1
+        ),
+        sliderInput(
+          "acc_alpha", "Nível de significância (α):",
+          min = 0.01, max = 0.10, value = 0.05, step = 0.01
+        ),
+        radioButtons(
+          "acc_tipo_carga", "Tipo de carga nos gráficos:",
+          choices = c("Diretas (X com u / Y com v)" = "direta",
+                      "Cruzadas (X com v / Y com u)" = "cruzada"),
+          selected = "direta"
+        )
+      ),
+      
+      # Controles da ACP
+      conditionalPanel(
+        condition = "input.tabset == 'acp'",
+        strong("CONFIGURAÇÃO DA ACP"),
+        hr(),
+        radioButtons(
+          "acp_modo", "Conjunto de variáveis:",
+          choices = c(
+            "Química + Peneiras Suplementares" = "sup",
+            "Apenas Variáveis Químicas" = "quim",
+            "Todas as Variáveis (Química + Peneiras)" = "full"
+          ),
+          selected = "sup"
+        ),
+        selectInput("acp_eixo1", "Eixo horizontal:", choices = 1:4, selected = 1),
+        selectInput("acp_eixo2", "Eixo vertical:",   choices = 1:4, selected = 2),
+        checkboxInput("acp_elipses", "Mostrar elipses de confiança (95%)", value = TRUE)
+      ),
+      
+      # Controles da Análise Discriminante
+      conditionalPanel(
+        condition = "input.tabset == 'disc'",
+        strong("MODELO DISCRIMINANTE"),
+        hr(),
+        radioButtons(
+          "disc_metodo", "Função discriminante:",
+          choices = c("Linear (LDA)" = "lda", "Quadrática (QDA)" = "qda"),
+          selected = "lda"
+        ),
+        radioButtons(
+          "disc_eval", "Método de avaliação:",
+          choices = c("Validação Cruzada (LOO-CV)" = "cv",
+                      "Ressubstituição (aparente)" = "aparente"),
+          selected = "cv"
+        ),
+        checkboxGroupInput(
+          "disc_vars", "Variáveis químicas no modelo:",
+          choices = rotulos_quim, selected = vars_quim
+        ),
+        hr(),
+        strong("CLASSIFICAR NOVA AMOSTRA"),
+        numericInput("pred_umidade", "Umidade (g/100g)", value = 11.20, step = 0.1),
+        numericInput("pred_brix",    "°Brix",            value = 32.00, step = 0.5),
+        numericInput("pred_cloreto", "Cloreto (%)",      value = 0.022, step = 0.002),
+        numericInput("pred_cafeina", "Cafeína (% b.s.)", value = 0.92,  step = 0.05),
+        numericInput("pred_cloro",   "Ác. Clorogênico",  value = 4.20,  step = 0.1),
+        uiOutput("disc_pred_nova")
+      ),
+      
+      # Controles do Cluster
+      conditionalPanel(
+        condition = "input.tabset == 'cluster'",
+        strong("PARÂMETROS DO CLUSTER"),
+        helpText("Agrupamento realizado sobre as 5 variáveis químicas padronizadas."),
+        hr(),
+        sliderInput("cl_k", "Número de clusters (k):", min = 2, max = 5, value = 2, step = 1),
+        selectInput(
+          "cl_metodo_hc", "Método de ligação (Hierárquico):",
+          choices = c(
+            "Ward.D2" = "ward.D2",
+            "Média (UPGMA)" = "average",
+            "Completa" = "complete",
+            "Simples" = "single"
+          ),
+          selected = "ward.D2"
+        ),
+        hr(),
+        strong("Correlação Cofenética:"),
+        verbatimTextOutput("cl_cofen")
       )
     ),
-    card(
-      tabsetPanel(
-        id = "tabset",
-        tabPanel(
+    
+    # ==========================================================================
+    # CARD DA DIREITA 
+    # ==========================================================================
+    navset_card_tab(
+      id = "tabset",
+      
+      # MENU DO MÓDULO 1
+      nav_menu(
+        "Módulo 1",
+        nav_panel(
           "Dados",
           br(),
           "Pré-visualização dos dados carregados (variáveis químicas e classe de peneira)",
           br(), br(),
           tableOutput("table1")
         ),
-        tabPanel(
+        nav_panel(
           "Exploratória",
           br(),
           fluidRow(
@@ -102,7 +219,7 @@ ui <- page_fluid(
             column(6, plotOutput("qqplot"))
           )
         ),
-        tabPanel(
+        nav_panel(
           "Teste T2",
           br(),
           withMathJax(helpText(
@@ -126,7 +243,7 @@ ui <- page_fluid(
             column(12, uiOutput("t2_conclusao"))
           )
         ),
-        tabPanel(
+        nav_panel(
           "ICS e Elipsóide",
           br(),
           uiOutput("titulo_ics"),
@@ -140,9 +257,93 @@ ui <- page_fluid(
           ),
           plotlyOutput("elipse", height = "550px")
         )
+      ),
+      
+      # MENU DO MÓDULO 2
+      nav_menu(
+        "Módulo 2",
+        nav_panel(
+          "Correlação Canônica (ACC)",
+          value = "acc",
+          br(),
+          strong("Correlações Canônicas e Teste de Bartlett (Qui-Quadrado)"),
+          tableOutput("acc_tabela"),
+          uiOutput("acc_conclusao"),
+          hr(),
+          layout_columns(
+            col_widths = c(6, 6),
+            plotOutput("acc_cargas_plot", height = "340px"),
+            plotlyOutput("acc_dispersao", height = "340px")
+          )
+        ),
+        nav_panel(
+          "Componentes Principais (ACP)",
+          value = "acp",
+          br(),
+          layout_columns(
+            col_widths = c(7, 5),
+            plotOutput("acp_plot_principal", height = "420px"),
+            plotOutput("acp_scree", height = "420px")
+          ),
+          hr(),
+          layout_columns(
+            col_widths = c(6, 6),
+            div(
+              strong("Autovalores e Variância Explicada"),
+              tableOutput("acp_autovalores")
+            ),
+            div(
+              strong("Cargas (Correlações com os Eixos) e cos² no Plano"),
+              tableOutput("acp_cargas")
+            )
+          )
+        ),
+        nav_panel(
+          "Análise Discriminante",
+          value = "disc",
+          br(),
+          layout_columns(
+            col_widths = c(6, 6),
+            div(
+              strong("Matriz de Confusão e Métricas"),
+              verbatimTextOutput("disc_cm")
+            ),
+            plotOutput("disc_roc", height = "340px")
+          ),
+          hr(),
+          layout_columns(
+            col_widths = c(6, 6),
+            div(
+              strong("Importância das Variáveis (Coef. Padronizados e Cargas LD1)"),
+              tableOutput("disc_importancia")
+            ),
+            plotOutput("disc_densidade", height = "300px")
+          )
+        ),
+        nav_panel(
+          "Agrupamento (Cluster)",
+          value = "cluster",
+          br(),
+          layout_columns(
+            col_widths = c(6, 6),
+            plotOutput("cl_kmeans_plot", height = "340px"),
+            plotOutput("cl_dendro_plot", height = "340px")
+          ),
+          hr(),
+          layout_columns(
+            col_widths = c(5, 7),
+            div(
+              strong("K-Means vs. Tamanho de Grão (Teste de Fisher)"),
+              verbatimTextOutput("cl_fisher")
+            ),
+            div(
+              strong("Perfil Médio (Químico e Físico) por Cluster K-Means"),
+              tableOutput("cl_perfis")
+            )
+          )
+        )
       )
-    ),
-    col_widths = c(3, 9)
+    )
   )
 )
 
@@ -419,6 +620,356 @@ server <- function(input, output) {
     )
     elips(delta0(), df(), vars_quim, vars_3d, alpha())
   })
+  
+  # MODULO 2 - SERVER
+  
+  # --- 2.1 ACC ---
+  acc_obj <- reactive({
+    Y1n <- scale(as.matrix(df() %>% dplyr::select(all_of(vars_quim))))
+    Y2n <- scale(as.matrix(df() %>% dplyr::select(all_of(vars_fis))))
+    candisc::cancor(Y1n, Y2n)
+  })
+  
+  acc_bartlett <- reactive({
+    cc <- acc_obj()
+    n <- nrow(df()); p <- length(vars_quim); q <- length(vars_fis)
+    lambda <- cc$cancor^2
+    k_max <- min(p, q)
+    
+    estat <- numeric(k_max); gl <- numeric(k_max); pval <- numeric(k_max)
+    for (i in 1:k_max) {
+      estat[i] <- -(n - (p + q + 3) / 2) * sum(log(1 - lambda[i:k_max]))
+      gl[i]    <- (p - i + 1) * (q - i + 1)
+      pval[i]  <- pchisq(estat[i], df = gl[i], lower.tail = FALSE)
+    }
+    
+    eigen_val <- lambda / (1 - lambda)
+    tibble(
+      Par           = paste0("Par ", 1:k_max),
+      Cor_Canonica  = cc$cancor,
+      R2_Canonico   = lambda,
+      Perc_Assoc    = (eigen_val / sum(eigen_val)) * 100,
+      Acum_Perc     = cumsum(Perc_Assoc),
+      Qui2_Bartlett = estat,
+      gl            = gl,
+      p_valor       = pval
+    )
+  })
+  
+  output$acc_tabela <- renderTable({
+    acc_bartlett()
+  }, digits = 4, align = "c")
+  
+  output$acc_conclusao <- renderUI({
+    tab <- acc_bartlett()
+    a <- input$acc_alpha
+    p1 <- tab$p_valor[1]
+    r1 <- round(tab$Cor_Canonica[1], 4)
+    
+    if (p1 < a) {
+      HTML(paste0(
+        "<p>Ao nível de <b>", a * 100, "%</b>, a primeira correlação canônica (", r1,
+        ") é <b>estatisticamente significativa</b> (p = ", round(p1, 4), ").</p>"
+      ))
+    } else {
+      HTML(paste0(
+        "<p>Ao nível de <b>", a * 100, "%</b>, <b>nenhuma</b> correlação canônica atingiu significância ",
+        "(1º par: r = ", r1, ", p = ", round(p1, 4), "). ",
+        if (p1 < 0.10) "Observa-se tendência marginal (p < 0,10)." else "", "</p>"
+      ))
+    }
+  })
+  
+  output$acc_cargas_plot <- renderPlot({
+    cc <- acc_obj()
+    k  <- as.integer(input$acc_par)
+    
+    if (input$acc_tipo_carga == "direta") {
+      c_x <- cc$structure$X.xscores[, k]
+      c_y <- cc$structure$Y.yscores[, k]
+      sub_txt <- paste0("Cargas Diretas — Par ", k)
+    } else {
+      c_x <- cc$structure$X.yscores[, k]
+      c_y <- cc$structure$Y.xscores[, k]
+      sub_txt <- paste0("Cargas Cruzadas — Par ", k)
+    }
+    
+    df_cargas <- bind_rows(
+      tibble(Variavel = names(c_x), Carga = as.numeric(c_x), Bloco = paste0("Química (u", k, ")")),
+      tibble(Variavel = names(c_y), Carga = as.numeric(c_y), Bloco = paste0("Física (v", k, ")"))
+    )
+    
+    ggplot(df_cargas, aes(x = reorder(Variavel, abs(Carga)), y = Carga, fill = Carga > 0)) +
+      geom_col(show.legend = FALSE) +
+      geom_hline(yintercept = 0, linetype = "dashed") +
+      coord_flip() +
+      facet_wrap(~ Bloco, scales = "free_y") +
+      scale_fill_manual(values = c("TRUE" = "#00AFBB", "FALSE" = "#FC4E07")) +
+      ylim(-1, 1) +
+      labs(title = sub_txt, x = NULL, y = "Correlação") +
+      theme_minimal()
+  })
+  
+  output$acc_dispersao <- renderPlotly({
+    cc <- acc_obj()
+    k  <- as.integer(input$acc_par)
+    
+    df_sc <- tibble(
+      u = cc$scores$X[, k],
+      v = cc$scores$Y[, k],
+      Amostra = df()$amostra,
+      Grupo = df()$grupo_peneira
+    )
+    
+    p <- ggplot(df_sc, aes(x = u, y = v, color = Grupo)) +
+      geom_point(aes(text = paste("Amostra:", Amostra)), size = 2.5, alpha = 0.85) +
+      geom_smooth(aes(group = 1), method = "lm", se = FALSE, color = "gray30", linetype = "dashed") +
+      scale_color_manual(values = c("Peneira Alta" = "#FC4E07", "Peneira Baixa" = "#00AFBB")) +
+      labs(
+        title = paste0("Escores Canônicos (r = ", round(cc$cancor[k], 3), ")"),
+        x = paste0("u", k, " (Química)"),
+        y = paste0("v", k, " (Física)")
+      ) +
+      theme_minimal()
+    
+    ggplotly(p, tooltip = c("text", "color", "x", "y"))
+  })
+  
+  # --- 2.2 ACP ---
+  acp_obj <- reactive({
+    if (input$acp_modo == "quim") {
+      prcomp(df() %>% dplyr::select(all_of(vars_quim)), scale. = TRUE)
+    } else if (input$acp_modo == "full") {
+      prcomp(df() %>% dplyr::select(all_of(c(vars_quim, vars_fis))), scale. = TRUE)
+    } else {
+      FactoMineR::PCA(
+        df() %>% dplyr::select(all_of(c(vars_quim, vars_fis))),
+        quanti.sup = 6:9, scale.unit = TRUE, graph = FALSE
+      )
+    }
+  })
+  
+  output$acp_scree <- renderPlot({
+    factoextra::fviz_eig(acp_obj(), addlabels = TRUE, ylim = c(0, 60),
+                         main = "Scree Plot (% Variância Explicada)")
+  })
+  
+  output$acp_plot_principal <- renderPlot({
+    eixos <- c(as.integer(input$acp_eixo1), as.integer(input$acp_eixo2))
+    validate(need(eixos[1] != eixos[2], "Selecione dois eixos distintos."))
+    
+    if (input$acp_modo == "sup") {
+      factoextra::fviz_pca_var(
+        acp_obj(),
+        axes = eixos,
+        col.var = "black",
+        col.quanti.sup = "steelblue",
+        repel = TRUE,
+        title = "Círculo de Correlações (Química Ativa + Peneiras Suplementares)"
+      )
+    } else {
+      factoextra::fviz_pca_biplot(
+        acp_obj(),
+        axes = eixos,
+        repel = TRUE,
+        col.var = "black",
+        col.ind = df()$grupo_peneira,
+        palette = c("#FC4E07", "#00AFBB"),
+        addEllipses = input$acp_elipses,
+        ellipse.type = "confidence",
+        legend.title = "Grupo",
+        title = "Biplot ACP"
+      )
+    }
+  })
+  
+  output$acp_autovalores <- renderTable({
+    factoextra::get_eigenvalue(acp_obj()) %>%
+      rownames_to_column("Componente") %>%
+      dplyr::rename(
+        Autovalor  = eigenvalue,
+        `Var (%)`  = variance.percent,
+        `Acum (%)` = cumulative.variance.percent
+      )
+  }, digits = 3)
+  
+  output$acp_cargas <- renderTable({
+    eixos <- c(as.integer(input$acp_eixo1), as.integer(input$acp_eixo2))
+    validate(need(eixos[1] != eixos[2], ""))
+    
+    v_acp <- factoextra::get_pca_var(acp_obj())
+    tab <- data.frame(
+      Variavel   = rownames(v_acp$coord),
+      Eixo_X     = v_acp$coord[, eixos[1]],
+      Eixo_Y     = v_acp$coord[, eixos[2]],
+      cos2_Plano = rowSums(v_acp$cos2[, eixos, drop = FALSE])
+    )
+    
+    if (input$acp_modo == "sup") {
+      sup <- acp_obj()$quanti.sup
+      tab_sup <- data.frame(
+        Variavel   = paste0(rownames(sup$cor), " (sup)"),
+        Eixo_X     = sup$cor[, eixos[1]],
+        Eixo_Y     = sup$cor[, eixos[2]],
+        cos2_Plano = rowSums(sup$cos2[, eixos, drop = FALSE])
+      )
+      tab <- bind_rows(tab, tab_sup)
+    }
+    tab
+  }, digits = 3)
+  
+  # --- 2.3 ANÁLISE DISCRIMINANTE ---
+  disc_formula <- reactive({
+    validate(need(length(input$disc_vars) >= 2, "Selecione ao menos 2 variáveis químicas."))
+    as.formula(paste("grupo_peneira ~", paste(input$disc_vars, collapse = " + ")))
+  })
+  
+  disc_fit_full <- reactive({
+    if (input$disc_metodo == "lda") {
+      MASS::lda(disc_formula(), data = df(), prior = c(0.5, 0.5))
+    } else {
+      MASS::qda(disc_formula(), data = df(), prior = c(0.5, 0.5))
+    }
+  })
+  
+  disc_eval_res <- reactive({
+    if (input$disc_eval == "cv") {
+      if (input$disc_metodo == "lda") {
+        MASS::lda(disc_formula(), data = df(), prior = c(0.5, 0.5), CV = TRUE)
+      } else {
+        MASS::qda(disc_formula(), data = df(), prior = c(0.5, 0.5), CV = TRUE)
+      }
+    } else {
+      predict(disc_fit_full(), df())
+    }
+  })
+  
+  output$disc_cm <- renderPrint({
+    res <- disc_eval_res()
+    caret::confusionMatrix(data = res$class, reference = df()$grupo_peneira)
+  })
+  
+  output$disc_roc <- renderPlot({
+    res <- disc_eval_res()
+    roc_obj <- pROC::roc(df()$grupo_peneira, res$posterior[, "Peneira Alta"], quiet = TRUE)
+    pROC::plot.roc(
+      roc_obj, print.auc = TRUE, auc.polygon = TRUE,
+      auc.polygon.col = "#00AFBB33", max.auc.polygon = TRUE,
+      main = paste0("Curva ROC (", toupper(input$disc_metodo), " - ", toupper(input$disc_eval), ")")
+    )
+  })
+  
+  output$disc_importancia <- renderTable({
+    validate(need(input$disc_metodo == "lda",
+                  "Coeficientes padronizados e cargas LD1 aplicam-se apenas à LDA."))
+    X <- df() %>% dplyr::select(all_of(input$disc_vars))
+    fit <- disc_fit_full()
+    pred <- predict(fit, df())
+    
+    g1 <- X[df()$grupo_peneira == "Peneira Alta", , drop = FALSE]
+    g2 <- X[df()$grupo_peneira == "Peneira Baixa", , drop = FALSE]
+    Sp <- ((nrow(g1) - 1) * cov(g1) + (nrow(g2) - 1) * cov(g2)) / (nrow(df()) - 2)
+    
+    tibble(
+      Variavel    = colnames(X),
+      Coef_Bruto  = as.numeric(coef(fit)),
+      Coef_Padrao = as.numeric(coef(fit)) * sqrt(diag(Sp)),
+      Carga_LD1   = as.numeric(cor(X, pred$x))
+    ) %>%
+      arrange(desc(abs(Carga_LD1)))
+  }, digits = 3)
+  
+  output$disc_densidade <- renderPlot({
+    validate(need(input$disc_metodo == "lda",
+                  "O gráfico de densidade dos escores LD1 é exclusivo da LDA."))
+    pred <- predict(disc_fit_full(), df())
+    df_p <- tibble(LD1 = as.numeric(pred$x), Grupo = df()$grupo_peneira)
+    
+    ggplot(df_p, aes(x = LD1, fill = Grupo)) +
+      geom_density(alpha = 0.45) +
+      geom_rug(aes(color = Grupo)) +
+      geom_vline(xintercept = 0, linetype = "dashed") +
+      scale_fill_manual(values = c("Peneira Alta" = "#FC4E07", "Peneira Baixa" = "#00AFBB")) +
+      scale_color_manual(values = c("Peneira Alta" = "#FC4E07", "Peneira Baixa" = "#00AFBB")) +
+      labs(title = "Distribuição dos Escores Discriminantes (LD1)", x = "LD1", y = "Densidade") +
+      theme_minimal()
+  })
+  
+  output$disc_pred_nova <- renderUI({
+    nova <- data.frame(
+      umidade        = input$pred_umidade,
+      brix           = input$pred_brix,
+      cloreto        = input$pred_cloreto,
+      cafeina        = input$pred_cafeina,
+      ac_clorogenico = input$pred_cloro
+    )
+    pred_n  <- predict(disc_fit_full(), newdata = nova)
+    p_alta  <- round(pred_n$posterior[1, "Peneira Alta"] * 100, 1)
+    p_baixa <- round(pred_n$posterior[1, "Peneira Baixa"] * 100, 1)
+    
+    HTML(paste0(
+      "<b>Classe prevista:</b> ", as.character(pred_n$class), "<br>",
+      "P(Peneira Alta) = <b>", p_alta, "%</b> | P(Peneira Baixa) = <b>", p_baixa, "%</b>"
+    ))
+  })
+  
+  # --- 2.4 AGRUPAMENTO (CLUSTER) ---
+  X_cl_pad <- reactive({
+    mat <- scale(df() %>% dplyr::select(all_of(vars_quim)))
+    rownames(mat) <- paste0(seq_len(nrow(df())), "_", df()$amostra)
+    mat
+  })
+  
+  cl_dist <- reactive(dist(X_cl_pad(), method = "euclidean"))
+  cl_hc   <- reactive(hclust(cl_dist(), method = input$cl_metodo_hc))
+  
+  cl_km <- reactive({
+    set.seed(123)
+    kmeans(X_cl_pad(), centers = input$cl_k, nstart = 25)
+  })
+  
+  output$cl_cofen <- renderPrint({
+    r_cof <- cor(cl_dist(), cophenetic(cl_hc()))
+    cat("r cofenético =", round(r_cof, 4))
+  })
+  
+  output$cl_kmeans_plot <- renderPlot({
+    factoextra::fviz_cluster(
+      cl_km(), data = X_cl_pad(),
+      palette = "jco", ellipse.type = "convex",
+      repel = TRUE, ggtheme = theme_minimal(),
+      main = paste0("K-Means (k = ", input$cl_k, ") sobre Perfil Químico")
+    )
+  })
+  
+  output$cl_dendro_plot <- renderPlot({
+    factoextra::fviz_dend(
+      cl_hc(), k = input$cl_k, cex = 0.5, palette = "jco",
+      rect = TRUE, rect_fill = TRUE,
+      main = paste0("Dendrograma (", input$cl_metodo_hc, ")"),
+      ylab = "Distância Euclidiana"
+    )
+  })
+  
+  output$cl_fisher <- renderPrint({
+    tab <- table(Cluster_KM = cl_km()$cluster, Grupo = df()$grupo_peneira)
+    print(tab)
+    cat("\nProporções por Cluster (%):\n")
+    print(round(prop.table(tab, margin = 1) * 100, 1))
+    cat("\n")
+    print(fisher.test(tab, simulate.p.value = (input$cl_k > 2)))
+  })
+  
+  output$cl_perfis <- renderTable({
+    df() %>%
+      mutate(Cluster = factor(cl_km()$cluster)) %>%
+      group_by(Cluster) %>%
+      summarise(
+        n = n(),
+        across(all_of(c(vars_quim, vars_fis)), ~ round(mean(.x), 3)),
+        .groups = "drop"
+      )
+  }, digits = 3)
 }
 
 ## run app

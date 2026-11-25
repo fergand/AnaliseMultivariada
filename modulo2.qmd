@@ -22,36 +22,40 @@ summary(df_cafe_bruto)
 ```{r}
 # Limpeza inicial dos dados -----------------------------------------------
 
-df_cafe <- df_cafe_bruto %>% 
-  clean_names() %>% 
+df_cafe <- df_cafe_bruto %>%
+  clean_names() %>%
   rename(
-    amostra = codigo_da_amostra,
-    umidade = teor_de_agua_g_100g,
-    brix = solidos_soluveis_totais_graus_brix,
-    cloreto = cloreto_percent,
-    cafeina = cafeina_percent_b_s,
+    amostra        = codigo_da_amostra,
+    umidade        = teor_de_agua_g_100g,
+    brix           = solidos_soluveis_totais_graus_brix,
+    cloreto        = cloreto_percent,
+    cafeina        = cafeina_percent_b_s,
     ac_clorogenico = ac_clorogenico_percent_b_s,
-    pen16 = peneira_16_percent,
-    pen17 = peneira_17_percent,
-    pen18 = peneira_18_percent,
-    pen19 = peneira_19_percent
-  ) %>% 
+    pen16          = peneira_16_percent,
+    pen17          = peneira_17_percent,
+    pen18          = peneira_18_percent,
+    pen19          = peneira_19_percent
+  ) %>%
   mutate(
-    amostra = as.factor(amostra),
-    pen18_19 = pen18+pen19,
-    class_grao = factor(ifelse(pen17 + pen18_19 >= median(pen17 + pen18_19), "Graudo", "Medio_Miudo"))
+    amostra        = as.factor(amostra),
+    media_pen_alta = mean(pen17 + pen18 + pen19),
+    .by            = amostra
+  ) %>%
+  mutate(
+    grupo_peneira = factor(
+      ifelse(media_pen_alta >= median(media_pen_alta), "Peneira Alta", "Peneira Baixa"),
+      levels = c("Peneira Alta", "Peneira Baixa")
+    )
   )
 
-
-summary(df_cafe)  
-
-boxplot(df_cafe)
+vars_quim <- c("umidade", "brix", "cloreto", "cafeina", "ac_clorogenico")
+vars_fis  <- c("pen16", "pen17", "pen18", "pen19")
 ```
 
 ```{r}
 library(car)
 df_cafe %>% 
-  dplyr::select(-amostra,-class_grao) %>% 
+  dplyr::select(-amostra,-grupo_peneira) %>% 
   cor() %>% 
   corrplot(method = "ellipse", type = "upper", 
            addCoef.col = "black", tl.col = "black", number.cex = 0.8,
@@ -299,452 +303,87 @@ Embora o segundo par canônico tenha apresentado uma correlação de 0.40, o tes
 Obs: não faz sentido utilizar as variáveis relacionadas à peneira aqui.
 
 ```{r}
+prop.table(table(df_cafe$grupo_peneira))
+```
+
+```{r}
+X_quim <- df_cafe %>% dplyr::select(umidade:ac_clorogenico)
+
+teste_box <- boxM(X_quim, df_cafe$grupo_peneira)
+teste_box
+# p >= 0.05 -> não rejeita H0 (favorece LDA)
+# p < 0.05  -> rejeita H0 (sugere QDA)
+```
+
+
+
+
+
+
+
+
+Separar em treino e teste:
+
+
+
+Como visto anteriormente, 
+
+```{r}
 pacman::p_load(caret)
 
-modelo_lda <- lda(class_grao ~ umidade + brix + cloreto + cafeina + ac_clorogenico , 
-                  data = df_cafe)
-
-modelo_lda
+modelo_lda <- lda(grupo_peneira ~ umidade + brix + cloreto + cafeina + ac_clorogenico,
+                  data = df_cafe,
+                  prior = c(0.5, 0.5), CV = TRUE)
 ```
-
-```{r}
-predicoes_lda <- predict(modelo_lda, df_cafe)
-confusionMatrix(predicoes_lda$class, df_cafe$class_grao)
-```
-
-```{r}
-# 
-# plot(modelo_lda, col = as.numeric(df_cafe$class_grao), 
-#      main = "Separação dos Tamanhos de Grão pelo Perfil Químico")
-```
-
 
 
 ```{r}
-# Leitura dos dados
-require(readxl)
-dados = as.data.frame( read_excel("Dados_Aula_Discriminante_1.xlsx",
-sheet ="Planilha1") )
-g=2 ### número de grupos
-p=ncol(dados)-1 
+confusionMatrix(data = modelo_lda$class, reference = df_cafe$grupo_peneira)
 ```
+
+
+
+
+
+
+
+
+
+
 
 ```{r}
-yb1 = apply(dados[ dados$pop==1 , -1 ], 2,mean); yb1=as.matrix(yb1)
-yb1
+# Estabilidade dos coeficientes padronizados ao longo dos 51 folds (usando LOO)
+coefs_loo <- sapply(1:nrow(df_cafe), function(i) {
+  sub_df <- df_cafe[-i, ]
+  mod_i  <- lda(grupo_peneira ~ umidade + brix + cloreto + cafeina + ac_clorogenico,
+                data = sub_df, prior = c(0.5, 0.5))
+  X_sub  <- sub_df[, c("umidade", "brix", "cloreto", "cafeina", "ac_clorogenico")]
+  g1_i   <- X_sub[sub_df$grupo_peneira == "Graudo", ]
+  g2_i   <- X_sub[sub_df$grupo_peneira == "Medio_Miudo", ]
+  Sp_i   <- ((nrow(g1_i) - 1) * cov(g1_i) + (nrow(g2_i) - 1) * cov(g2_i)) / (nrow(sub_df) - 2)
+  as.numeric(coef(mod_i)) * sqrt(diag(Sp_i))
+})
 
-yb2 = apply(dados[ dados$pop==2 , -1 ], 2,mean); yb2=as.matrix(yb2)
-yb2
+rownames(coefs_loo) <- c("umidade", "brix", "cloreto", "cafeina", "ac_clorogenico")
+data.frame(
+  Media_LOO = round(rowMeans(coefs_loo), 3),
+  DP_LOO    = round(apply(coefs_loo, 1, sd), 3)
+)
 ```
+
 
 ```{r}
-### Matrizes de variâncias-covariância amostrais de cada grupo
-S1=cov( dados[ dados$pop==1 , -1 ] ); round(S1, 3)
-
-S2=cov( dados[ dados$pop==2 , -1 ] ); round(S2, 3)
+df_cafe %>%
+  group_by(grupo_peneira) %>%
+  summarise(
+    umidade_media = round(mean(umidade), 2),
+    umidade_dp    = round(sd(umidade), 2),
+    brix_medio    = round(mean(brix), 2),
+    brix_dp       = round(sd(brix), 2)
+  )
 ```
 
-```{r}
-#| warning: false
-
-# Testando a homogeneidade de variâncias (Teste generalizado de Bartlet)
-########## Pacote pronto para o teste de homogeneidade de variâncias
-require(biotools)
-boxM( dados[,-1], dados[,1] )
-
-```
-
-Não rejeita-se H0, consideramos as variâncias sendo iguais.
-
-```{r}
-#### Calculo automático de Sp (matriz variâncias-covariâncias comum)
-g=2
-Sp = matrix(0, p, p); nx = rep(0, g)
-lev = levels(as.factor(dados[,1]))
-for(k in 1:g){
-x = dados[dados[,1]==lev[k],2:(p+1)]
-nx[k] = nrow(x)
-Sp = Sp + cov(x) * (nx[k] - 1) }
-Sp = Sp / (sum(nx) - g)
-round(Sp,3)
-```
-
-```{r}
-########## Coeficientes da função discriminante de Fisher
-b = t( yb1 - yb2 ) %*% solve(Sp); b
-```
-
-Esses são os coeficientes de discriminação, mas podem estar normalizados também.
-
-```{r}
-########## Função discriminante nos centroides (vetores de média)
-Fyb1 = b %*% yb1; Fyb1
-
-Fyb2 = b %*% yb2; Fyb2
-
-########## Ponto de corte - cut off
-c=(Fyb1+Fyb2)/2; c
-```
-
-Então -39,38, ou em módulo 39,38, é o ponto de corte para cada grupo.
-
-```{r}
-yn=data.frame(Y1=2.0, Y2=4.0, Y3=11.0); yn
-
-### Escore desta observação na FDL
-Fyn=b %*% t(yn); Fyn
-```
-
-Código pronto:
-
-```{r}
-################################################################################
-##  ANÁLISE MULTIVARIADA APLICADA - Aula 11: ANÁLISE DISCRIMINANTE
-##  EXEMPLO 1 
-##  Prof. Dr. Sergio Augusto Rodrigues
-##
-##  Três características (Y1, Y2 e Y3) avaliadas em duas populações
-##  (dois cultivares). Um novo indivíduo yn = (2, 4, 11) pertence a qual população?
-##  Arquivo de dados: Dados_Aula_Discriminante_1.xlsx (planilha "Planilha1")
-##
-##  PARTE A - Função discriminante linear de Fisher "passo a passo"
-##  PARTE B - Funções discriminantes para g populações (d_i)
-##  PARTE C - Funções prontas: lda() e qda() do pacote MASS
-##  PARTE D - Avaliação da regra (ressubstituição, validação cruzada, ROC)
-################################################################################
-
-## Instale os pacotes apenas uma vez (retire o # da linha abaixo)
-# install.packages(c("readxl", "biotools", "MASS", "lattice", "caret", "pROC"))
-
-rm(list = ls())
-
-#### Leitura dos dados #########################################################
-      # inserir o local onde o arquivo foi salvo
-library(readxl)
-dados = as.data.frame(read_excel("Dados_Aula_Discriminante_1.xlsx", sheet = "Planilha1"))
-dados
-
-g = 2                 # número de grupos (populações)
-p = ncol(dados) - 1   # número de variáveis (a 1a coluna indica a população)
-```
-
-```{r}
-################################################################################
-#### PARTE A - Função discriminante linear (FDL) de Fisher passo a passo ####
-################################################################################
-
-### Vetores de médias amostrais de cada população
-yb1 = as.matrix(apply(dados[dados$pop == 1, -1], 2, mean));  yb1
-yb2 = as.matrix(apply(dados[dados$pop == 2, -1], 2, mean));  yb2
-
-### Matrizes de variâncias e covariâncias amostrais de cada população
-S1 = cov(dados[dados$pop == 1, -1]);  round(S1, 3)
-S2 = cov(dados[dados$pop == 2, -1]);  round(S2, 3)
-
-### Teste de homogeneidade das matrizes de covariâncias
-### (Teste generalizado de Bartlett / M de Box)
-### H0: Sigma1 = Sigma2   ->  p > 0,05: usar a FDL;   p < 0,05: usar a FDQ
-library(biotools)
-boxM(dados[, -1], dados[, 1])
-```
-
-```{r}
-### Matriz de variâncias e covariâncias combinada (Sp)
-Sp = matrix(0, p, p);  nx = rep(0, g);  lev = levels(as.factor(dados[, 1]))
-for (k in 1:g) {
-  x = dados[dados[, 1] == lev[k], 2:(p + 1)]
-  nx[k] = nrow(x)
-  Sp = Sp + cov(x) * (nx[k] - 1)
-}
-Sp = Sp / (sum(nx) - g);  round(Sp, 3)
-
-### Coeficientes da FDL de Fisher:  b' = (yb1 - yb2)' Sp^-1
-b = t(yb1 - yb2) %*% solve(Sp);  b
-
-### Coeficientes normalizados (escores com variância 1 dentro dos grupos)
-bnorm = b * 1 / c(sqrt(b %*% Sp %*% t(b)));  bnorm
-
-### Escores nos centroides (vetores de médias) e ponto de corte (cut off)
-b = bnorm                       # usando os coeficientes normalizados
-Fyb1 = b %*% yb1;  Fyb1
-Fyb2 = b %*% yb2;  Fyb2
-c = (Fyb1 + Fyb2) / 2;  c
-
-### Classificação de uma nova observação
-yn = data.frame(Y1 = 2.0, Y2 = 4.0, Y3 = 11.0);  yn
-Fyn = b %*% t(yn);  Fyn          # escore da nova observação na FDL
-
-### Função centrada no ponto médio: w = |F(yn)| - |c|
-w = abs(Fyn) - abs(c);  w
-## Regra (neste exemplo |Fyb1| < |Fyb2|):  w < 0 -> população 1;  w > 0 -> população 2
-ifelse(w < 0, "yn é da População 1", "yn é da População 2")
-```
-
-```{r}
-################################################################################
-#### PARTE B - Funções discriminantes para g populações (vale para g >= 2) ####
-################################################################################
-##  d_i(y) = yb_i' Sp^-1 y - 0,5 yb_i' Sp^-1 yb_i + ln(p_i)
-##  A nova observação é alocada na população com o MAIOR d_i(y)
-
-yb = matrix(0, g, p)
-for (i in 1:g) { yb[i, ] = apply(dados[dados$pop == i, -1], 2, mean) }
-yb                                  # cada linha: vetor de médias de uma população
-
-d = matrix(0, 1, g);  pr = 1 / g     # probabilidades a priori iguais
-for (i in 1:g) {
-  d[, i] = yb[i, ] %*% solve(Sp) %*% t(yn) -
-           0.5 * yb[i, ] %*% solve(Sp) %*% yb[i, ] + log(pr)
-}
-d
-
-### Coeficientes e constantes das funções de cada população
-d1 = yb[1, ] %*% solve(Sp);  k1 = -0.5 * yb[1, ] %*% solve(Sp) %*% yb[1, ] + log(pr)
-d2 = yb[2, ] %*% solve(Sp);  k2 = -0.5 * yb[2, ] %*% solve(Sp) %*% yb[2, ] + log(pr)
-d1; k1; d2; k2
-
-classe = which.max(d)               # posição do maior valor
-print(paste("A nova observação é da População:", classe))
-
-### Função discriminante QUADRÁTICA (se H0 do teste de Box fosse rejeitada)
-##  d_i(y) = -0,5 ln|S_i| - 0,5 (y - yb_i)' S_i^-1 (y - yb_i) + ln(p_i)
-Slist = list(S1, S2);  dq = matrix(0, 1, g)
-for (i in 1:g) {
-  dif = as.numeric(yn) - yb[i, ]
-  dq[, i] = -0.5 * log(det(Slist[[i]])) -
-            0.5 * t(dif) %*% solve(Slist[[i]]) %*% dif + log(pr)
-}
-dq;  which.max(dq)
-```
-
-```{r}
-################################################################################
-#### PARTE C - Funções prontas do pacote MASS: lda() e qda() ####################
-################################################################################
-library(MASS)
-dados$pop = factor(dados$pop)
-```
-
-```{r}
-str(dados)
-```
-
-```{r}
-### Análise discriminante LINEAR
-##  prior  = probabilidades a priori (padrão: proporções amostrais dos grupos)
-##  method = "moment" (padrão, estimadores usuais), "mle", "mve" ou "t" (robusto)
-##  CV     = TRUE faz validação cruzada leave-one-out (ver PARTE D)
-result = lda(pop ~ Y1 + Y2 + Y3, data = dados, prior = c(0.5, 0.5))
-result
-names(result)
-
-result$prior       # probabilidades a priori
-result$counts      # nº de observações por grupo
-result$means       # vetores de médias de cada grupo
-result$scaling     # coeficientes da(s) função(ões) discriminante(s) - LD
-result$svd         # razão entre desvio padrão entre e dentro dos grupos em cada LD
-prop.trace = result$svd^2 / sum(result$svd^2);  prop.trace   # "Proportion of trace"
-
-b = coef(result);  b       # mesmo que result$scaling
-```
-
-```{r}
-### Previsão para a nova observação
-yn = data.frame(Y1 = 2, Y2 = 4, Y3 = 11)
-pred_yn = predict(result, yn);  pred_yn
-##  $class     -> população em que foi classificada
-##  $posterior -> probabilidades a posteriori de pertencer a cada população
-##  $x         -> escore na função discriminante (centrado: igual ao w da PARTE A)
-```
-
-```{r}
-### Efeito da probabilidade a priori (ex.: 30% pop. 1 e 70% pop. 2)
-predict(result, yn, prior = c(0.3, 0.7))
-
-### Previsão para os dados da amostra
-pred = predict(result);  pred
-```
-
-```{r}
-plot(result, type = "b")               # histogramas e densidades dos escores
-
-library(lattice)
-densityplot(~ pred$x, groups = dados$pop, bw = 1, pch = 16,
-            xlab = "Discriminante", ylab = "Densidade")
-```
-
-```{r}
-### Análise discriminante QUADRÁTICA (cada grupo com sua matriz S_i)
-resultq = qda(pop ~ Y1 + Y2 + Y3, data = dados, prior = c(0.5, 0.5))
-resultq
-names(resultq)
-predict(resultq, yn)        # qda retorna apenas $class e $posterior
-```
-
-```{r}
-################################################################################
-#### PARTE D - Avaliação da regra de classificação ##############################
-################################################################################
-grupo = dados$pop           # população correta
-yp = pred$class             # população predita (método da ressubstituição)
-
-### Matriz de confusão (tabela de classificação)
-tb = table(Observado = grupo, Predito = yp);  tb
-prop.table(tb) * 100                      # % em relação ao total
-sum(diag(tb)) * 100 / sum(tb)             # % global de acerto (aparente)
-prop.table(tb, margin = 1) * 100          # % de acerto por população (linhas)
-
-### Validação cruzada leave-one-out (estimativa menos otimista do erro)
-result_cv = lda(pop ~ Y1 + Y2 + Y3, data = dados, prior = c(0.5, 0.5), CV = TRUE)
-tb_cv = table(Observado = grupo, Predito = result_cv$class);  tb_cv
-sum(diag(tb_cv)) * 100 / sum(tb_cv)       # % de acerto na validação cruzada
-
-### Probabilidade de má classificação pela distância de Mahalanobis
-D2 = t(yb1 - yb2) %*% solve(Sp) %*% (yb1 - yb2);  D2
-pnorm(-sqrt(D2) / 2)                       # P(1|2) = P(2|1) com priors iguais
-```
-
-```{r}
-### Pacote caret: matriz de confusão com várias medidas
-library(caret)
-confusionMatrix(data = yp, reference = grupo)
-```
-
-```{r}
-### Curva ROC e área abaixo da curva (AUC) - somente para 2 grupos
-library(pROC)
-rocLDF = roc(grupo, pred$posterior[, 2])
-plot.roc(rocLDF, print.auc = TRUE, auc.polygon.col = "blue",
-         max.auc.polygon = TRUE, main = "LDA")
-################################################################################
-```
-
-```{r}
-################################################################################
-##  ANÁLISE MULTIVARIADA APLICADA - Aula 11: ANÁLISE DISCRIMINANTE
-##  EXEMPLO 2 (Exercício) - Flores de íris (3 espécies, 4 variáveis)
-##  Prof. Dr. Sergio Augusto Rodrigues
-##
-##  150 flores de três espécies (setosa, versicolor e virginica) avaliadas
-##  quanto ao comprimento e largura das sépalas e das pétalas.
-##  Como classificar a flor yn = (6,9; 2,6; 5,3; 2,2)?
-################################################################################
-
-# install.packages(c("MASS", "biotools", "klaR", "caret"))
-rm(list = ls())
-
-#### Dados (disponíveis no R) ##################################################
-data(iris)
-#?iris                      # mais detalhes sobre os dados
-dados = iris
-head(dados);  table(dados$Species)
-```
-
-```{r}
-### Análise exploratória: dispersão das variáveis por espécie
-pairs(dados[, -5], pch = 21, bg = as.integer(dados$Species), lower.panel = NULL)
-
-### Homogeneidade das matrizes de covariâncias (M de Box)
-library(biotools)
-boxM(dados[, -5], dados$Species)
-## p < 0,05 -> matrizes diferentes -> a qda seria indicada.
-## O teste de Box é muito sensível (n grande / falta de normalidade):
-## compare os resultados da lda e da qda.
-```
-
-```{r}
-#### Análise discriminante LINEAR ##############################################
-library(MASS)
-result = lda(Species ~ ., data = dados)     # prior = proporções (1/3 cada)
-result
-## "Proportion of trace": % da separação entre grupos explicada por LD1 e LD2
-result$svd^2 / sum(result$svd^2)
-```
-
-```{r}
-### Vetores de médias e coeficientes das funções discriminantes
-yb = result$means;  yb
-coeficientes = coef(result);  coeficientes   # há min(p, g-1) = 2 funções (LD1 e LD2)
-```
-
-```{r}
-### Escores das funções discriminantes
-yp = predict(result)
-head(yp$x)                                   # escores centrados (usados pelo predict)
-EFD = as.matrix(dados[, -5]) %*% coef(result)   # escores sem centrar
-```
-
-```{r}
-### Gráfico LD1 x LD2 com os centroides de cada espécie
-plot(EFD[, 1], EFD[, 2], pch = 20, col = as.integer(dados$Species),
-     xlab = "Escores de LD1", ylab = "Escores de LD2")
-Fyb = yb %*% coef(result)                    # centroides no espaço discriminante
-points(Fyb[, 1], Fyb[, 2], pch = 13, cex = 3)
-text(Fyb[, 1], Fyb[, 2], result$lev, pos = 3)
-legend("topright", legend = result$lev, col = 1:3, pch = 20, cex = 0.8)
-```
-
-```{r}
-### Gráficos de pontos de cada função discriminante
-stripchart(EFD[, 1] ~ Species, data = dados, pch = 20, xlab = "LD1",
-           ylab = "Espécie", col = 1:3)
-points(Fyb[, 1], (1:length(result$lev)) + 0.05, pch = 13, cex = 1.5)
-stripchart(EFD[, 2] ~ Species, data = dados, pch = 20, xlab = "LD2",
-           ylab = "Espécie", col = 1:3)
-points(Fyb[, 2], (1:length(result$lev)) + 0.05, pch = 13, cex = 1.5)
-## A LD1 é a mais apropriada para discriminar os grupos.
-```
-
-```{r}
-### Classificação da nova flor
-yn = data.frame(Sepal.Length = 6.9, Sepal.Width = 2.6,
-                Petal.Length = 5.3, Petal.Width = 2.2)
-ypn = predict(result, yn);  ypn
-```
-
-```{r}
-### Gráficos de partição (regiões de classificação para pares de variáveis)
-library(klaR)
-partimat(Species ~ ., data = dados, method = "lda")
-```
-
-```{r}
-### Avaliação da regra
-tb = table(Observado = dados$Species, Predito = yp$class);  tb
-sum(diag(tb)) / sum(tb) * 100                       # acerto aparente (%)
-
-result_cv = lda(Species ~ ., data = dados, CV = TRUE)  # leave-one-out
-tb_cv = table(Observado = dados$Species, Predito = result_cv$class);  tb_cv
-sum(diag(tb_cv)) / sum(tb_cv) * 100                  # acerto na validação cruzada
-```
-
-```{r}
-library(caret)
-confusionMatrix(data = yp$class, reference = dados$Species)
-
-### Holdout: 70% para ajustar e 30% para testar (mantendo as proporções)
-set.seed(123)
-treino = createDataPartition(dados$Species, p = 0.7, list = FALSE)
-fit_tr = lda(Species ~ ., data = dados[treino, ])
-pred_te = predict(fit_tr, dados[-treino, ])$class
-confusionMatrix(data = pred_te, reference = dados$Species[-treino])
-```
-
-```{r}
-#### Análise discriminante QUADRÁTICA ##########################################
-resultq = qda(Species ~ ., data = dados)
-resultq
-predict(resultq, yn)                                   # $class e $posterior
-tbq = table(Observado = dados$Species, Predito = predict(resultq)$class);  tbq
-resultq_cv = qda(Species ~ ., data = dados, CV = TRUE)
-mean(resultq_cv$class == dados$Species) * 100         # acerto na validação cruzada
-partimat(Species ~ ., data = dados, method = "qda")
-################################################################################
-
-```
-
-
-
+A Análise Discriminante Linear apresentou acurácia global de $64{,}71\%$ (IC 95%: $50{,}07\%$–$77{,}57\%$) na validação cruzada, superando estatisticamente a taxa de classificação ao acaso (No Information Rate $= 50{,}98\%$, $p = 0{,}0336$). O desempenho foi equilibrado entre os grupos, com sensibilidade de $65{,}38\%$ para grãos graúdos, especificidade de $64{,}00\%$ para grãos médios/miúdos, acurácia balanceada de $64{,}69\%$ e erros simétricos entre as classes (teste de McNemar, $p = 1{,}000$). A separação na função discriminante (LD1) foi conduzida principalmente pelo teor de sólidos solúveis (°Brix), com coeficiente padronizado de $+0{,}720$ (média leave-one-out de $+0{,}719 \pm 0{,}042$) e carga discriminante de $+0{,}625$, em oposição à umidade, com coeficiente padronizado de $-0{,}541$ (média leave-one-out de $-0{,}540 \pm 0{,}056$) e carga de $-0{,}653$. Esse padrão reforça a direção observada na ACC — na qual umidade ($-0{,}801$) e °Brix ($+0{,}509$) lideraram a associação com o perfil de peneiras — e no biplot da ACP. Contudo, o índice Kappa de $0{,}2938$ caracteriza concordância apenas razoável, evidenciando sobreposição química relevante entre as categorias de peneira e indicando que a classificação física por tamanho de grão, isoladamente, não assegura a diferenciação química completa dos lotes de café avaliados.
 
 
 
@@ -757,10 +396,10 @@ summary(pca_quimica)
 fviz_eig(pca_quimica, addlabels = TRUE, ylim = c(0, 100),
          main = "Variância Explicada pelas Componentes Principais")
 
-fviz_pca_biplot(pca_quimica, 
+fviz_pca_biplot(pca_quimica,
                 repel = TRUE, # Evita sobreposição de texto
                 col.var = "black", # Cor das setas (variáveis)
-                col.ind = df_cafe$class_grao, # Colore os pontos pelo tamanho do grão
+                col.ind = df_cafe$grupo_peneira, # Colore os pontos pelo tamanho do grão
                 palette = c("#FC4E07", "#00AFBB"),
                 legend.title = "Tamanho do Grão",
                 title = "Biplot ACP: Perfil Químico e Tamanho Físico")
@@ -778,11 +417,141 @@ fviz_eig(pca_full, addlabels = TRUE, ylim = c(0, 100),
 fviz_pca_biplot(pca_full, 
                 repel = TRUE, # Evita sobreposição de texto
                 col.var = "black", # Cor das setas (variáveis)
-                col.ind = df_cafe$class_grao, # Colore os pontos pelo tamanho do grão
+                col.ind = df_cafe$grupo_peneira, # Colore os pontos pelo tamanho do grão
                 palette = c("#FC4E07", "#00AFBB"),
                 legend.title = "Tamanho do Grão",
                 title = "Biplot ACP: Perfil Químico e Tamanho Físico")
 ```
+
+```{r}
+# Função auxiliar para diagnosticar qualquer um dos dois objetos (pca_quimica ou pca_full)
+diagnostico_acp <- function(pca_obj) {
+  # 1. Autovalores e variância acumulada (Critério de Kaiser: eigenvalue > 1)
+  autovalores <- get_eigenvalue(pca_obj)
+  
+  # 2. Métricas das variáveis
+  vars <- get_pca_var(pca_obj)
+  
+  list(
+    autovalores   = round(autovalores, 3),
+    cargas_cor    = round(vars$coord, 3),   # Correlação variável x PC (melhor que rotation)
+    contribuicao  = round(vars$contrib, 2), # % de contribuição para cada PC
+    qualidade_cos2 = round(vars$cos2, 3),   # Qualidade de representação (soma nas PCs = 1)
+    cos2_plano12  = round(rowSums(vars$cos2[, 1:2]), 3) # Quanto da variável está bem representado em PC1+PC2
+  )
+}
+```
+
+
+```{r}
+res_quim <- diagnostico_acp(pca_quimica)
+res_full <- diagnostico_acp(pca_full)
+```
+
+
+```{r}
+res_quim$autovalores
+res_quim$cargas_cor
+res_quim$cos2_plano12
+```
+
+
+```{r}
+res_full$autovalores
+res_full$cargas_cor
+res_full$cos2_plano12
+```
+
+
+```{r}
+# 1. Biplot da ACP Química com elipses de confiança (95%) em torno dos centroides
+#    (Troque ellipse.type = "norm" se quiser mostrar a sobreposição das observações)
+fviz_pca_biplot(pca_quimica,
+                axes = c(1, 2),
+                repel = TRUE,
+                col.var = "black",
+                col.ind = df_cafe$grupo_peneira,
+                palette = c("#FC4E07", "#00AFBB"),
+                addEllipses = TRUE,
+                ellipse.type = "confidence",
+                mean.point = TRUE,
+                legend.title = "Tamanho do Grão",
+                title = "Biplot ACP (Apenas Variáveis Químicas)")
+
+# 2. Contribuição das variáveis para PC1 e PC2 (ajuda a nomear os eixos)
+fviz_contrib(pca_quimica, choice = "var", axes = 1, top = 10,
+             title = "Contribuição das Variáveis - Dim1 (Química)")
+fviz_contrib(pca_quimica, choice = "var", axes = 2, top = 10,
+             title = "Contribuição das Variáveis - Dim2 (Química)")
+
+# 3. Qualidade de representação (cos2) no plano 1-2 da ACP completa
+fviz_pca_var(pca_full,
+             col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE,
+             title = "Círculo de Correlações (Qualidade cos² - Matriz Completa)")
+
+# 4. Caso PC3 tenha autovalor > 1 na pca_full, visualizar o plano PC1 x PC3
+fviz_pca_biplot(pca_full,
+                axes = c(1, 3),
+                repel = TRUE,
+                col.var = "black",
+                col.ind = df_cafe$grupo_peneira,
+                palette = c("#FC4E07", "#00AFBB"),
+                addEllipses = TRUE,
+                ellipse.type = "confidence",
+                legend.title = "Tamanho do Grão",
+                title = "Biplot ACP Completa (Dim1 x Dim3)")
+```
+
+
+
+
+```{r}
+library(FactoMineR)
+
+# Colunas 1:5 = químicas (ativas); colunas 6:9 = peneiras (suplementares/passivas)
+pca_sup <- PCA(df_cafe %>% dplyr::select(umidade:pen19),
+               quanti.sup = 6:9,
+               scale.unit = TRUE,
+               graph = FALSE)
+
+# Setas pretas = químicas que construíram os eixos
+# Setas azuis tracejadas = correlação das peneiras com os eixos puramente químicos
+fviz_pca_var(pca_sup, col.var = "black", col.quanti.sup = "steelblue", repel = TRUE,
+             title = "ACP Química com Peneiras como Variáveis Suplementares")
+```
+
+
+```{r}
+fviz_pca_biplot(pca_sup, 
+                repel = TRUE, # Evita sobreposição de texto
+                col.var = "black", # Cor das setas (variáveis)
+                col.ind = df_cafe$grupo_peneira, # Colore os pontos pelo tamanho do grão
+                palette = c("#FC4E07", "#00AFBB"),
+                legend.title = "Tamanho do Grão",
+                title = "Biplot ACP: Perfil Químico e Tamanho Físico")
+```
+
+
+```{r}
+res_sup <- diagnostico_acp(pca_sup)
+
+
+res_sup$autovalores
+res_sup$cargas_cor
+res_sup$cos2_plano12
+```
+
+```{r}
+# Correlação das peneiras (suplementares) com os componentes puramente químicos
+round(pca_sup$quanti.sup$cor, 3)
+
+# Qualidade de representação (cos2) das peneiras no plano químico 1-2
+round(rowSums(pca_sup$quanti.sup$cos2[, 1:2]), 3)
+```
+
+Na Dim.2 (+umidade $+0{,}647$, +cloreto $+0{,}527$ vs. -cafeina $-0{,}864$): pen16 aponta para o lado negativo ($-0{,}234$), enquanto pen17 ($+0{,}227$) e pen18 ($+0{,}221$) apontam juntas para o lado positivo, contrapondo grãos menores (tendência a menor umidade e mais cafeína) a grãos maiores (tendência a maior umidade e cloreto).Na Dim.1 (+ac_clorogenico $+0{,}714$, +umidade $+0{,}621$ vs. -brix $-0{,}704$, -cloreto $-0{,}575$): pen16 projeta-se no sentido negativo ($-0{,}212$), alinhando-se a maior °Brix e menor teor de água, em leve oposição à pen18 ($+0{,}086$).Na Dim.3 (+brix $+0{,}676$ vs. -cloreto $-0{,}461$): repete-se a associação de pen16 ($+0{,}186$) com sólidos solúveis e de pen17 ($-0{,}248$) e pen18 ($-0{,}170$) com cloreto — espelhando as correlações bivariadas da matriz R12 (brix $\times$ pen16 $= 0{,}25$ e cloreto $\times$ pen17 $= 0{,}32$).
 
 # Agrupamento
 
@@ -811,5 +580,128 @@ fviz_cluster(modelo_kmeans, data = matriz_quimica_padrao,
 
 # 5. Tabela de contingência: O agrupamento químico refletiu a peneira física?
 table(Agrupamento_Quimico = df_cafe$cluster_quimico, 
-      Tamanho_Real = df_cafe$class_grao)
+      Tamanho_Real = df_cafe$grupo_peneira)
 ```
+
+
+```{r}
+library(tidyverse)
+library(factoextra)
+library(cluster)
+
+# Matriz química padronizada (mantendo o código da amostra nos rótulos para o dendrograma)
+X_quim_pad <- df_cafe %>%
+  dplyr::select(umidade:ac_clorogenico) %>%
+  scale()
+rownames(X_quim_pad) <- paste0(1:nrow(df_cafe), "_", df_cafe$amostra)
+
+# Matriz de distâncias Euclidianas
+dist_quim <- dist(X_quim_pad, method = "euclidean")
+
+# Escolha do número ótimo de clusters (k) por dois critérios complementares
+fviz_nbclust(X_quim_pad, kmeans, method = "wss") +
+  labs(title = "Método do Cotovelo (WSS) - K-Means")
+
+fviz_nbclust(X_quim_pad, kmeans, method = "silhouette") +
+  labs(title = "Largura Média da Silhueta - K-Means")
+```
+
+
+```{r}
+# Comparando os principais métodos de ligação via correlação cofenética
+metodos <- c("single", "complete", "average", "ward.D2")
+
+tab_cofen <- map_dfr(metodos, function(m) {
+  hc <- hclust(dist_quim, method = m)
+  tibble(
+    Metodo = m,
+    Corr_Cofenetica = round(cor(dist_quim, cophenetic(hc)), 4)
+  )
+})
+tab_cofen
+
+# Ajuste do dendrograma (Ward.D2 tende a gerar grupos mais compactos e balanceados;
+# se "average" / UPGMA tiver cofenética muito superior, pode usá-lo no lugar)
+hc_ward <- hclust(dist_quim, method = "ward.D2")
+
+# Defina k de acordo com o gráfico da silhueta (ajuste k_opt se for diferente de 2)
+k_opt <- 2
+
+# Dendrograma colorido
+fviz_dend(hc_ward,
+          k = k_opt,
+          cex = 0.55,
+          palette = "jco",
+          rect = TRUE,
+          rect_fill = TRUE,
+          main = "Dendrograma (Ward.D2) - Perfil Químico do Café",
+          ylab = "Distância Euclidiana")
+
+grupos_hc <- factor(cutree(hc_ward, k = k_opt))
+```
+
+
+
+
+
+
+```{r}
+set.seed(123)
+km_res <- kmeans(X_quim_pad, centers = k_opt, nstart = 25)
+
+# Qualidade individual e média da silhueta para o K-Means
+sil_km <- silhouette(km_res$cluster, dist_quim)
+fviz_silhouette(sil_km, palette = "jco", main = "Diagnóstico de Silhueta (K-Means)")
+
+# Visualização dos clusters no plano da ACP química
+fviz_cluster(km_res,
+             data = X_quim_pad,
+             palette = "jco",
+             ellipse.type = "convex",
+             repel = TRUE,
+             ggtheme = theme_minimal(),
+             main = "Agrupamento K-Means sobre o Perfil Químico")
+
+# Adicionando ambos os agrupamentos ao dataframe
+df_clusters <- df_cafe %>%
+  mutate(
+    cluster_hc = grupos_hc,
+    cluster_km = factor(km_res$cluster)
+  )
+
+# Perfil médio (químico E físico) de cada cluster gerado pelo K-Means
+df_clusters %>%
+  group_by(cluster_km) %>%
+  summarise(
+    n = n(),
+    across(c(umidade, brix, cloreto, cafeina, ac_clorogenico,
+             pen16, pen17, pen18, pen19),
+           ~ round(mean(.x), 3))
+  )
+```
+
+
+```{r}
+# 1. Concordância entre os dois métodos (Hierárquico vs. K-Means)
+table(Hierarquico = df_clusters$cluster_hc, KMeans = df_clusters$cluster_km)
+
+# 2. Os clusters químicos refletem o tamanho físico (grupo_peneira)?
+tab_cruzada <- table(Cluster_KM = df_clusters$cluster_km,
+                     Tamanho_Grao = df_clusters$grupo_peneira)
+tab_cruzada
+prop.table(tab_cruzada, margin = 1) * 100  # % de Graúdo e Médio/Miúdo em cada cluster
+fisher.test(tab_cruzada)                  # p < 0.05 indica associação significativa
+
+# 3. As triplicatas da mesma amostra caíram no mesmo cluster?
+df_clusters %>%
+  group_by(amostra) %>%
+  summarise(
+    n_clusters = n_distinct(cluster_km),
+    clusters   = paste(sort(unique(cluster_km)), collapse = ", "),
+    tamanho    = paste(unique(grupo_peneira), collapse = "/")
+  ) %>%
+  arrange(desc(n_clusters))
+```
+
+
+Na Análise de Agrupamento conduzida exclusivamente sobre as variáveis químicas padronizadas ($k = 2$), os métodos hierárquico e K-Means apresentaram concordância moderada ($74{,}51\%$, correspondendo a $38$ das $51$ amostras, considerada a equivalência invertida dos rótulos), compatível com uma variação química contínua e sem fronteiras abruptas. Ao cruzar a partição obtida pelo K-Means com a classificação física por tamanho de grão, o Cluster 1 concentrou $62{,}50\%$ de amostras graúdas ($15/24$) e o Cluster 2 reuniu $59{,}26\%$ de amostras médias/miúdas ($16/27$), perfazendo alinhamento global de $60{,}78\%$. Contudo, o Teste Exato de Fisher não indicou associação estatisticamente significativa entre o agrupamento químico e o tamanho da peneira ($p = 0{,}1637$; odds ratio $= 2{,}38$, IC 95%: $0{,}69$–$8{,}72$). Esses achados corroboram a ACP suplementar e a LDA, evidenciando que, quando agrupados sem supervisão pelo perfil químico total, os lotes de café não se separam de forma consistente segundo a classificação física por peneira.
