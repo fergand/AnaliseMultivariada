@@ -50,7 +50,7 @@ ui <- page_fluid(
     # CARD DA ESQUERDA (muda sozinho conforme a aba escolhida)
     # ==========================================================================
     card(
-      # Controles do Módulo 1 (Fernando intacto — aparece em qualquer aba dele)
+      # Controles do Módulo 1 
       conditionalPanel(
         condition = "input.tabset != 'acc' && input.tabset != 'acp' && input.tabset != 'disc' && input.tabset != 'cluster'",
         card(
@@ -106,11 +106,10 @@ ui <- page_fluid(
         radioButtons(
           "acp_modo", "Conjunto de variáveis:",
           choices = c(
-            "Química + Peneiras Suplementares" = "sup",
             "Apenas Variáveis Químicas" = "quim",
             "Todas as Variáveis (Química + Peneiras)" = "full"
           ),
-          selected = "sup"
+          selected = "quim"
         ),
         selectInput("acp_eixo1", "Eixo horizontal:", choices = 1:4, selected = 1),
         selectInput("acp_eixo2", "Eixo vertical:",   choices = 1:4, selected = 2),
@@ -209,6 +208,14 @@ ui <- page_fluid(
             column(4, plotOutput("hist4", height = "240px")),
             column(4, plotOutput("hist5", height = "240px"))
           ),
+          hr(),
+          strong("Boxplots Comparativos das Variáveis Químicas (Peneira Alta vs. Peneira Baixa)"),
+          br(), br(),
+          fluidRow(
+            column(4, checkboxInput("box_pontos", "Mostrar pontos individuais", value = TRUE)),
+            column(4, checkboxInput("box_medias", "Destacar médias (losango)", value = TRUE))
+          ),
+          plotOutput("boxplots_exp", height = "420px"),
           hr(),
           fluidRow(
             column(
@@ -608,6 +615,51 @@ server <- function(input, output) {
     hist(selected_grupo()$ac_clorogenico, main = "Ác. Clorogênico", xlab = "% b.s.", col = "gray85", border = "white")
   })
   
+  rotulos_box_quim <- c(
+    umidade        = "Umidade (g/100g)",
+    brix           = "°Brix",
+    cloreto        = "Cloreto (%)",
+    cafeina        = "Cafeína (% b.s.)",
+    ac_clorogenico = "Ác. Clorogênico (% b.s.)"
+  )
+  
+  output$boxplots_exp <- renderPlot({
+    df_long <- df() %>%
+      dplyr::select(grupo_peneira, all_of(vars_quim)) %>%
+      tidyr::pivot_longer(
+        cols = all_of(vars_quim),
+        names_to = "variavel",
+        values_to = "valor"
+      ) %>%
+      mutate(variavel = factor(rotulos_box_quim[variavel], levels = rotulos_box_quim[vars_quim]))
+    
+    p <- ggplot(df_long, aes(x = grupo_peneira, y = valor, fill = grupo_peneira)) +
+      geom_boxplot(alpha = 0.65, width = 0.55, outlier.shape = if (input$box_pontos) NA else 19) +
+      facet_wrap(~ variavel, scales = "free_y") +
+      scale_fill_manual(values = c("Peneira Alta" = "#FC4E07", "Peneira Baixa" = "#00AFBB")) +
+      labs(x = NULL, y = NULL, fill = "Grupo") +
+      theme_minimal(base_size = 12) +
+      theme(
+        legend.position = "top",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(face = "bold")
+      )
+    
+    if (input$box_pontos) {
+      p <- p + geom_jitter(width = 0.14, alpha = 0.6, size = 1.8, color = "gray25")
+    }
+    
+    if (input$box_medias) {
+      p <- p + stat_summary(
+        fun = mean, geom = "point", shape = 23, size = 3,
+        fill = "white", color = "black", stroke = 1
+      )
+    }
+    
+    p
+  })
+  
   output$qqplot <- renderPlot({
     qqmahala(selected_grupo())
   }, res = 96)
@@ -784,7 +836,8 @@ server <- function(input, output) {
   })
   
   output$acp_autovalores <- renderTable({
-    factoextra::get_eigenvalue(acp_obj()) %>%
+    factoextra::get_eigenvalue(acp_obj()) %>% 
+      as.data.frame()%>% 
       rownames_to_column("Componente") %>%
       dplyr::rename(
         Autovalor  = eigenvalue,
